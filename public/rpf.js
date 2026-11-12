@@ -35,6 +35,9 @@ function connectWebSocket() {
                 case 'add_to_log':
                     updateLog(msg.data);
                     break;
+                case 'set_log':
+                    setLog(msg.data);
+                    break;
                 case 'set_folder':
                     getFolder(msg.folder);
                     break;
@@ -112,7 +115,27 @@ function populateFileList({ files = [] } = {}) {
 ///////////////////////////////////////////////////////////////////////////////
 // adds an entry to the upload log
 function updateLog(data) {
-    document.getElementById('log').value += data;
+    const log = document.getElementById('log');
+    log.value += data;
+    log.scrollTop = log.scrollHeight;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// replaces the whole log (sent by the server on page load and on clear)
+function setLog(data) {
+    const log = document.getElementById('log');
+    log.value = data || '';
+    log.scrollTop = log.scrollHeight;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// asks the server to clear the log for every open page
+function clearLog() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ command: 'clear_log' }));
+    } else {
+        setLog('');
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
