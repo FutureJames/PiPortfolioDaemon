@@ -14,11 +14,12 @@ if (typeof window.WebSocket === 'undefined') {
     showStatus('This browser does not support WebSockets.', 'error');
 } else {
     connectWebSocket();
-    // phones drop the connection in the background; reconnect on return
+    // after sleep, backgrounding or a network change the connection may be
+    // gone, or dead while still looking open: check it on return
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && !isConnected()) reconnectNow();
+        if (document.visibilityState === 'visible') checkConnection();
     });
-    window.addEventListener('online', () => { if (!isConnected()) reconnectNow(); });
+    window.addEventListener('online', checkConnection);
 }
 enableDropZone();
 
@@ -73,6 +74,40 @@ function reconnectNow() {
     connectWebSocket();
 }
 
+// Liveness check: a socket can look OPEN after sleep or a network change
+// while the connection is actually dead. Ping the server and replace the
+// socket if no pong arrives in time. The timeout is generous because the
+// server can't answer while it is busy with a Portfolio transfer.
+const PING_TIMEOUT = 10000;
+let pingId = 0;
+let pendingPing = null;     // { id, timer } while waiting for a pong
+
+function checkConnection() {
+    if (!isConnected()) {
+        reconnectNow();
+        return;
+    }
+    if (pendingPing) return;    // a check is already running
+    const id = ++pingId;
+    pendingPing = { id, timer: setTimeout(replaceDeadSocket, PING_TIMEOUT) };
+    ws.send(JSON.stringify({ command: 'ping', id }));
+}
+
+function clearPendingPing() {
+    if (pendingPing) clearTimeout(pendingPing.timer);
+    pendingPing = null;
+}
+
+// drops the current socket without waiting for it to close, and reconnects
+function replaceDeadSocket() {
+    clearPendingPing();
+    const old = ws;
+    ws = null;              // from here on the old socket's events are ignored
+    try { if (old) old.close(); } catch (e) { /* already closed */ }
+    showStatus('Connection to the server lost — reconnecting…');
+    reconnectNow();
+}
+
 function connectWebSocket() {
     // don't open a second connection while one is open or opening
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
@@ -82,6 +117,7 @@ function connectWebSocket() {
     ws = socket;
 
     socket.addEventListener('open', () => {
+        if (ws !== socket) return;      // replaced while connecting
         wasOpen = true;
         const reconnected = reconnectDelay > 1000 || document.getElementById('conn_status').hidden === false;
         reconnectDelay = 1000;
@@ -104,16 +140,21 @@ function connectWebSocket() {
     socket.addEventListener('close', () => {
         if (ws !== socket) return;      // an older socket; already replaced
         ws = null;
+        clearPendingPing();
         showStatus(wasOpen ? 'Connection to the server lost — reconnecting…'
                            : 'Can’t reach the server — retrying…');
         scheduleReconnect();
     });
 
     socket.addEventListener('message', (event) => {
+            if (ws !== socket) return;  // late message from a replaced socket
             const msg = JSON.parse(event.data);
             if (debug) console.log(msg);
 
             switch (msg.command) {
+                case 'pong':
+                    if (pendingPing && msg.id === pendingPing.id) clearPendingPing();
+                    break;
                 case 'add_to_log':
                     updateLog(msg.data);
                     break;

@@ -77,6 +77,10 @@ const setupWebSockets = (server) => {
                     activityLog = '';
                     clients.forEach(client => client.send(JSON.stringify({ command: 'set_log', data: '' })));
                     break;
+                case 'ping':
+                    // liveness check from the page (e.g. after sleep or a network change)
+                    ws.send(JSON.stringify({ command: 'pong', id: message.id }));
+                    break;
                 default:
                     console.log('Unknown command:', message.command);
             }
