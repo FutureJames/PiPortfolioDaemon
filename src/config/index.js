@@ -5,13 +5,13 @@ const path = require('path');
 ///////////////////////////////////////////////////////////////////////////////
 
 const config = {
-    appPort: 3000,
+    appPort: 80,
     wsPort: 40510,
     portfolioTimeout: 4000,
     portfolioPath: 'c:\\',
     webserverFolder: path.join(__dirname, '../..', 'public'),
     homepage: path.join(__dirname, '../..', 'public', 'rpf.html'),
-    sharedFolder: path.join(__dirname, '../../..', 'upload'),
+    sharedFolder: path.join(__dirname, '../..', 'upload'),
     tmpFolder: '/tmp',
     // !!! TODO: be better w/ *.*
     listCommand: 'rpfolio -l <drive>*.*',
