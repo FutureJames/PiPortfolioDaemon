@@ -1,135 +1,490 @@
-* {
+/* ------------------------------------------------------------------------- */
+/* Theme                                                                     */
+/* ------------------------------------------------------------------------- */
+
+:root {
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --surface-muted: #fafafa;
+    --border: #e2e2e6;
+    --text: #2b2b2f;
+    --text-muted: #6e6e78;
+    --accent: #a54bc2;          /* deepened from the original #ba55d3 for contrast */
+    --accent-hover: #8e3aab;
+    --button-bg: #a54bc2;
+    --button-hover: #8e3aab;
+    --accent-soft: #f4e9f8;
+    --link: #2552c7;
+    --success: #2e7d4f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
+    --radius: 12px;
+    --control-h: 34px;          /* height of small header controls */
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
+    --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #17171a;
+        --surface: #212126;
+        --surface-muted: #1b1b1f;
+        --border: #34343b;
+        --text: #e8e8ec;
+        --text-muted: #9a9aa6;
+        --accent: #d08ae8;
+        --accent-hover: #dda4f0;
+        --button-bg: #9547b3;
+        --button-hover: #a95ac8;
+        --accent-soft: #33243a;
+        --link: #8fb0ff;
+        --success: #6fcf97;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+        color-scheme: dark;
+    }
+    /* the logo is black artwork on a transparent background */
+    #logo {
+        filter: invert(1);
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Base                                                                      */
+/* ------------------------------------------------------------------------- */
+
+*, *::before, *::after {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
 body {
-    font: 16px Arial, sans-serif;
-    padding: 20px;
-    background-color: #F5F5F5;
-    color: #333;
-    scroll-behavior: smooth;
+    font: 15px/1.5 var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    padding: 32px 24px 48px;
+    -webkit-font-smoothing: antialiased;
 }
 
-h1 {
-    font-size: 16pt;
-    padding-bottom: 20px;
-    margin: -10px 0 0 65px;
-}
-input, textarea {
-    background-color: #F5F5F5;
+.page {
+    max-width: 1080px;
+    margin: 0 auto;
 }
 
-button, input[type="submit"], input[type="button"] {
-    padding: 5px;
-    color: #f5f5f5;
-    background: #ba55d3;    
-    border: 0;
-    border-radius: 3px;
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 
-li {
-    list-style: none;    
-    padding: 1px;
-}
+/* ------------------------------------------------------------------------- */
+/* Header                                                                    */
+/* ------------------------------------------------------------------------- */
 
-label {
-    display: none;
-}
-
-.content {
-    display: flex;
-    padding: 20px;
-}
-
-.column1 {
-    flex: 0 0 40%;
-}
-
-.column2 {
-    flex: 1;
-    border-left: 1px solid #333;
-    text-align: right;
+.header-wrapper {
+    margin-bottom: 28px;
 }
 
 #logo {
-    width: 400px;
-}
-
-#current_folder, #dir_container {
-    margin-left: 10px;
-    font: 11pt 'Courier New', Courier, monospace;
-    border: 1px solid #808080 ;
-    border-radius: 3px;
-}
-
-#current_folder {
-    height: 25px;
-    width: 75%;
-}
-
-#dir_container {
-    margin-top: 10px;
-    min-height: 400px;
-    max-height: 400px;
-    border: 0;
-    overflow-y: scroll;
-}
-
-#dir_container a {
-    text-decoration: none;
-}
-
-#dir_container a:hover {
-    text-decoration: underline;
-}
-
-#dir_container a:visited {
-    color: blue;
-}
-
-#log {
+    display: block;
     width: 100%;
-    min-height: 500px;
-    border: 0;
-    font-size: 12pt;
-    padding-left: 20px;
-    font-family: 'Courier New', Courier, monospace;
+    max-width: 400px;
+    height: auto;
 }
 
-#drop_zone {
-    height: 80px;
-    border: 2px dashed #bbb;
-    border-radius: 20px;
+h1 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+    margin: 2px 0 0 15%;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Layout                                                                    */
+/* ------------------------------------------------------------------------- */
+
+.content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: stretch;
+}
+
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    min-height: 560px;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;    /* last resort on tiny screens: control drops below the title */
+    gap: 12px;
+    /* same height in every card, with or without a button (e.g. Clear),
+       so the card titles line up across the page */
+    min-height: var(--control-h);
+    margin-bottom: 12px;
+}
+
+.card-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Controls                                                                  */
+/* ------------------------------------------------------------------------- */
+
+button,
+input[type="submit"],
+.button {
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    line-height: 1;
+    padding: 9px 16px;
+    color: #fff;
+    background: var(--button-bg);
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+button:hover,
+input[type="submit"]:hover,
+.button:hover {
+    background: var(--button-hover);
+}
+
+button:disabled,
+input[type="submit"]:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    background: var(--button-bg);
+}
+
+.button-secondary {
+    color: var(--accent);
+    background: transparent;
+    border: 1px solid var(--border);
+}
+
+.button-secondary:hover {
+    background: var(--accent-soft);
+}
+
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Header controls (Clear, drive toggle) share one height so the two card
+   headers mirror each other */
+
+.card-header > button {
+    height: var(--control-h);
+    padding: 0 14px;
+}
+
+/* Drive toggle: a pill with the two Portfolio drives; a white thumb slides
+   under the selected one */
+
+.drive-toggle {
+    --pad: 3px;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    height: var(--control-h);
+    padding: var(--pad);
+    background: var(--button-bg);
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+.drive-thumb {
+    position: absolute;
+    top: var(--pad);
+    bottom: var(--pad);
+    left: var(--pad);
+    width: calc(50% - var(--pad));
+    background: #fff;
+    border-radius: 999px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+    transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+.drive-toggle[data-drive="c:\\"] .drive-thumb {
+    transform: translateX(100%);
+}
+
+.drive-toggle button {
+    position: relative;     /* sit above the thumb */
     display: flex;
     align-items: center;
     justify-content: center;
-    text-align: center;
-    margin: 20px 10px 0 10px;
-    padding: 0;
+    gap: 6px;
+    padding: 0 12px;
+    font-size: 0.85rem;
+    color: #fff;
+    background: transparent;
+    border-radius: 999px;
+    font-weight: 600;
+    transition: color 0.25s ease, background-color 0.15s ease;
 }
 
-#file_submit {
-    margin-top: 10px;
+.drive-toggle button:hover {
+    background: rgba(255, 255, 255, 0.12);
 }
 
-.header-wrapper {
+.drive-toggle button[aria-checked="true"],
+.drive-toggle button[aria-checked="true"]:hover {
+    color: var(--button-bg);
+    background: transparent;
+    cursor: default;
+}
+
+.drive-toggle button:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: -4px;
+}
+
+.drive-toggle button[aria-checked="true"]:focus-visible {
+    outline-color: var(--button-bg);
+}
+
+.drive-letter {
+    font: 700 0.85rem var(--mono);
+}
+
+.drive-name {
+    font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .drive-thumb,
+    .drive-toggle button {
+        transition: none;
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+/* File list                                                                 */
+/* ------------------------------------------------------------------------- */
+
+/* Directory field: fixed drive prefix + folder name + Open */
+
+.folder-row {
     display: flex;
-    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
 }
 
-.header-content {
+.path-field {
+    flex: 1;
+    min-width: 0;
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    height: var(--control-h);
+    padding: 0 10px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: text;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.path-field:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.path-prefix {
+    font: 700 0.9rem var(--mono);
+    color: var(--accent);
+    padding-right: 2px;
+}
+
+#current_folder {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    font: 0.9rem var(--mono);
+    text-transform: uppercase;
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    outline: none;
+}
+
+#current_folder::placeholder {
+    font-family: var(--sans);
+    text-transform: none;
+    color: var(--text-muted);
+}
+
+.folder-row > button {
+    height: var(--control-h);
+    padding: 0 14px;
+}
+
+#dir_container {
+    flex: 1;
+    min-height: 220px;
+    max-height: 400px;
+    overflow-y: auto;
+    margin: 0 -8px;     /* rows bleed to the card padding */
+}
+
+#file_list {
+    list-style: none;
+}
+
+#file_list:empty::before {
+    content: 'No files';
+    display: block;
+    padding: 8px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+#file_list a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font: 0.95rem var(--mono);
+    color: var(--link);
+    text-decoration: none;
+}
+
+#file_list a::after {
+    content: '↓';
+    font-family: var(--sans);
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+#file_list a:hover {
+    background: var(--accent-soft);
+}
+
+#file_list a:hover::after {
+    opacity: 1;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Upload drop zone                                                          */
+/* ------------------------------------------------------------------------- */
+
+#upload_form {
+    margin-top: 16px;
+}
+
+#drop_zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-muted);
+    padding: 18px 14px;
+    text-align: center;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 #drop_zone.over {
-    background-color: lightgreen;
-    /* You can add more styles here... */
+    border-color: var(--accent);
+    background: var(--accent-soft);
 }
 
-#upload_form {
-    text-align: center;
+.drop-hint {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+.upload-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+#file_name {
+    margin-top: 10px;
+    font: 0.85rem var(--mono);
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#file_name:empty {
+    display: none;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Activity log                                                              */
+/* ------------------------------------------------------------------------- */
+
+#log {
+    flex: 1;
+    width: 100%;
+    min-height: 480px;
+    resize: none;
+    font: 0.95rem/1.6 var(--mono);
+    color: var(--text);
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+
+#log:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Small screens                                                             */
+/* ------------------------------------------------------------------------- */
+
+/* Stack the cards once the files card would be too narrow for its title and
+   the full drive toggle side by side (needs about 782px of window width). */
+@media (max-width: 800px) {
+    body {
+        padding: 20px 16px 32px;
+    }
+    .content {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .card {
+        min-height: 0;
+    }
+    #log {
+        min-height: 260px;
+    }
+    .card {
+        padding: 16px 14px;
+    }
+    .drive-toggle button {
+        padding: 0 9px;
+        gap: 4px;
+    }
 }

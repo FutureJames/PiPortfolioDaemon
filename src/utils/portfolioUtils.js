@@ -40,6 +40,8 @@ const getDirListFromPortfolio = () => {
         .split('\n')
         .filter(Boolean)
         .slice(2)
+        // rpfolio prints "No files." for an empty drive; that is not a file
+        .filter(name => name.trim() !== 'No files.')
         .sort();
       return res;
     } catch (error) {
