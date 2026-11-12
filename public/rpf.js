@@ -6,6 +6,7 @@ let ws = null;                  // the current WebSocket, or null
 let reconnectTimer = null;
 let reconnectDelay = 1000;      // grows to RECONNECT_MAX while the server is down
 const RECONNECT_MAX = 10000;
+let statusHideTimer = null;     // declared before startup: showStatus() uses it
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -24,8 +25,6 @@ enableDropZone();
 
 ///////////////////////////////////////////////////////////////////////////////
 // connection status message (bottom of the page)
-
-let statusHideTimer = null;
 
 // kind: 'warn' (stays until cleared), 'error' (stays), 'ok' / 'info' (fade out)
 function showStatus(text, kind = 'warn') {
@@ -87,6 +86,10 @@ function connectWebSocket() {
         const reconnected = reconnectDelay > 1000 || document.getElementById('conn_status').hidden === false;
         reconnectDelay = 1000;
         if (debug) console.log('Connected to server');
+        // drop the old listing first: the server's folder may have changed
+        // while we were away, and if the new listing fails, stale links
+        // would download same-named files from the wrong folder
+        clearFileList();
         // the server answers with the log, the current folder and its files
         socket.send(JSON.stringify({ command: 'page_loaded' }));
         initializeInputEvents();
@@ -150,10 +153,10 @@ function initializeInputEvents() {
     const options = Array.from(toggle.querySelectorAll('[role="radio"]'));
 
     // switching drives goes to that drive's root
+    // only clear the folder field once the server has the request
     const choose = (drive) => {
-        if (drive !== currentDrive) {
+        if (drive !== currentDrive && sendFolder(drive)) {
             document.getElementById('current_folder').value = '';
-            sendFolder(drive);
         }
     };
 
@@ -263,11 +266,13 @@ function clearLog() {
 
 ///////////////////////////////////////////////////////////////////////////////
 // asks the server to switch to another folder (e.g. 'a:\' or 'c:\TESTDIR\')
+// returns false (changing nothing on the page) if not connected
 function sendFolder(folder) {
-    if (!sendMessage({ command: 'set_folder', folder })) return;
+    if (!sendMessage({ command: 'set_folder', folder })) return false;
     currentDrive = folder.slice(0, 3).toLowerCase();
     showDrive(currentDrive);
     clearFileList();
+    return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
