@@ -488,3 +488,58 @@ input[type="submit"]:disabled {
         gap: 4px;
     }
 }
+
+/* ------------------------------------------------------------------------- */
+/* Connection status (replaces the old alert pop-ups)                        */
+/* ------------------------------------------------------------------------- */
+
+.conn-status {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(-50%);
+    z-index: 20;
+    max-width: calc(100% - 32px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
+}
+
+.conn-status[hidden] {
+    display: none;
+}
+
+.conn-status::before {
+    content: '';
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--status-color, #d9a400);
+}
+
+.conn-status[data-kind="warn"]::before {
+    animation: conn-pulse 1.2s ease-in-out infinite;
+}
+
+.conn-status[data-kind="ok"]   { --status-color: var(--success); }
+.conn-status[data-kind="info"],
+.conn-status[data-kind="error"] { --status-color: #d64545; }
+
+@keyframes conn-pulse {
+    50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .conn-status[data-kind="warn"]::before {
+        animation: none;
+    }
+}

@@ -2,32 +2,111 @@
 
 let debug = false;
 
-const port = 40510;
+let ws = null;                  // the current WebSocket, or null
+let reconnectTimer = null;
+let reconnectDelay = 1000;      // grows to RECONNECT_MAX while the server is down
+const RECONNECT_MAX = 10000;
 
 ///////////////////////////////////////////////////////////////////////////////
 
 if (typeof window.WebSocket === 'undefined') {
-    alert('Web sockets are not supported');
+    showStatus('This browser does not support WebSockets.', 'error');
 } else {
-    let ws;
     connectWebSocket();
+    // phones drop the connection in the background; reconnect on return
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && !isConnected()) reconnectNow();
+    });
+    window.addEventListener('online', () => { if (!isConnected()) reconnectNow(); });
 }
 enableDropZone();
 
 
 ///////////////////////////////////////////////////////////////////////////////
-// adds event listeners to the web sockets
+// connection status message (bottom of the page)
+
+let statusHideTimer = null;
+
+// kind: 'warn' (stays until cleared), 'error' (stays), 'ok' / 'info' (fade out)
+function showStatus(text, kind = 'warn') {
+    const el = document.getElementById('conn_status');
+    if (!el) return;
+    clearTimeout(statusHideTimer);
+    el.textContent = text;
+    el.dataset.kind = kind;
+    el.hidden = false;
+    if (kind === 'ok' || kind === 'info') {
+        statusHideTimer = setTimeout(hideStatus, kind === 'ok' ? 2000 : 6000);
+    }
+}
+
+function hideStatus() {
+    const el = document.getElementById('conn_status');
+    if (el) el.hidden = true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// WebSocket connection with automatic reconnect
+
+function isConnected() {
+    return ws !== null && ws.readyState === WebSocket.OPEN;
+}
+
+// sends a command if connected; returns false (and says so) if not
+function sendMessage(message) {
+    if (!isConnected()) {
+        showStatus('Not connected to the server — reconnecting…');
+        return false;
+    }
+    ws.send(JSON.stringify(message));
+    return true;
+}
+
+function scheduleReconnect() {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectWebSocket, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX);
+}
+
+function reconnectNow() {
+    clearTimeout(reconnectTimer);
+    reconnectDelay = 1000;
+    connectWebSocket();
+}
 
 function connectWebSocket() {
-    try {
-        ws = new WebSocket(`ws://${location.host}`);
-        ws.addEventListener('open', () => {
-            console.log('Connected to server!');
-            ws.send(JSON.stringify({ command: 'page_loaded' }));
-            initializeInputEvents(); 
-        });
+    // don't open a second connection while one is open or opening
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-        ws.addEventListener('message', (event) => {
+    let wasOpen = false;
+    const socket = new WebSocket(`ws://${location.host}`);
+    ws = socket;
+
+    socket.addEventListener('open', () => {
+        wasOpen = true;
+        const reconnected = reconnectDelay > 1000 || document.getElementById('conn_status').hidden === false;
+        reconnectDelay = 1000;
+        if (debug) console.log('Connected to server');
+        // the server answers with the log, the current folder and its files
+        socket.send(JSON.stringify({ command: 'page_loaded' }));
+        initializeInputEvents();
+        if (reconnected) showStatus('Reconnected', 'ok'); else hideStatus();
+    });
+
+    // a failed connect also fires 'close', which handles the retry
+    socket.addEventListener('error', () => {
+        if (debug) console.log('WebSocket error');
+    });
+
+    socket.addEventListener('close', () => {
+        if (ws !== socket) return;      // an older socket; already replaced
+        ws = null;
+        showStatus(wasOpen ? 'Connection to the server lost — reconnecting…'
+                           : 'Can’t reach the server — retrying…');
+        scheduleReconnect();
+    });
+
+    socket.addEventListener('message', (event) => {
             const msg = JSON.parse(event.data);
             if (debug) console.log(msg);
 
@@ -45,32 +124,13 @@ function connectWebSocket() {
                     populateFileList(msg);
                     break;
                 case 'pofo_error':
-                    console.log('PoFo connection error!!');
-                    alert('No connection to Atari Portfolio.');
+                    showStatus('No connection to the Atari Portfolio — is it in server mode?', 'info');
                     break;
                 default:
-                    console.log('error');
+                    if (debug) console.log('Unknown message', msg);
                     break;
             }
-        });
-
-        ws.addEventListener('error', () => {
-            console.log('WebSocket error');
-            alert('Error connecting to WebSocket.');
-        });
-
-        ws.addEventListener('close', () => {
-            ws = null;
-            console.log('Disconnected!!');
-            alert('WebSocket connection lost.');
-            setTimeout(() => {
-                ws = new WebSocket(`ws://${location.host}`);
-            }, 5000);
-        });
-    } catch (error) {
-        console.error(error);
-        return;
-    }
+    });
 }
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -198,23 +258,15 @@ function setLog(data) {
 ///////////////////////////////////////////////////////////////////////////////
 // asks the server to clear the log for every open page
 function clearLog() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ command: 'clear_log' }));
-    } else {
-        setLog('');
-    }
+    sendMessage({ command: 'clear_log' });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // asks the server to switch to another folder (e.g. 'a:\' or 'c:\TESTDIR\')
 function sendFolder(folder) {
+    if (!sendMessage({ command: 'set_folder', folder })) return;
     currentDrive = folder.slice(0, 3).toLowerCase();
     showDrive(currentDrive);
-    const message = {
-        command: 'set_folder',
-        folder,
-    };
-    ws.send(JSON.stringify(message));
     clearFileList();
 }
 
