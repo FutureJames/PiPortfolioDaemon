@@ -2,36 +2,159 @@
 
 let debug = false;
 
-const port = 40510;
+let ws = null;                  // the current WebSocket, or null
+let reconnectTimer = null;
+let reconnectDelay = 1000;      // grows to RECONNECT_MAX while the server is down
+const RECONNECT_MAX = 10000;
+let statusHideTimer = null;     // declared before startup: showStatus() uses it
 
 ///////////////////////////////////////////////////////////////////////////////
 
 if (typeof window.WebSocket === 'undefined') {
-    alert('Web sockets are not supported');
+    showStatus('This browser does not support WebSockets.', 'error');
 } else {
-    let ws;
     connectWebSocket();
+    // after sleep, backgrounding or a network change the connection may be
+    // gone, or dead while still looking open: check it on return
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') checkConnection();
+    });
+    window.addEventListener('online', checkConnection);
 }
 enableDropZone();
 
 
 ///////////////////////////////////////////////////////////////////////////////
-// adds event listeners to the web sockets
+// connection status message (bottom of the page)
+
+// kind: 'warn' (stays until cleared), 'error' (stays), 'ok' / 'info' (fade out)
+function showStatus(text, kind = 'warn') {
+    const el = document.getElementById('conn_status');
+    if (!el) return;
+    clearTimeout(statusHideTimer);
+    el.textContent = text;
+    el.dataset.kind = kind;
+    el.hidden = false;
+    if (kind === 'ok' || kind === 'info') {
+        statusHideTimer = setTimeout(hideStatus, kind === 'ok' ? 2000 : 6000);
+    }
+}
+
+function hideStatus() {
+    const el = document.getElementById('conn_status');
+    if (el) el.hidden = true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// WebSocket connection with automatic reconnect
+
+function isConnected() {
+    return ws !== null && ws.readyState === WebSocket.OPEN;
+}
+
+// sends a command if connected; returns false (and says so) if not
+function sendMessage(message) {
+    if (!isConnected()) {
+        showStatus('Not connected to the server — reconnecting…');
+        return false;
+    }
+    ws.send(JSON.stringify(message));
+    return true;
+}
+
+function scheduleReconnect() {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectWebSocket, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX);
+}
+
+function reconnectNow() {
+    clearTimeout(reconnectTimer);
+    reconnectDelay = 1000;
+    connectWebSocket();
+}
+
+// Liveness check: a socket can look OPEN after sleep or a network change
+// while the connection is actually dead. Ping the server and replace the
+// socket if no pong arrives in time. The timeout is generous because the
+// server can't answer while it is busy with a Portfolio transfer.
+const PING_TIMEOUT = 10000;
+let pingId = 0;
+let pendingPing = null;     // { id, timer } while waiting for a pong
+
+function checkConnection() {
+    if (!isConnected()) {
+        reconnectNow();
+        return;
+    }
+    if (pendingPing) return;    // a check is already running
+    const id = ++pingId;
+    pendingPing = { id, timer: setTimeout(replaceDeadSocket, PING_TIMEOUT) };
+    ws.send(JSON.stringify({ command: 'ping', id }));
+}
+
+function clearPendingPing() {
+    if (pendingPing) clearTimeout(pendingPing.timer);
+    pendingPing = null;
+}
+
+// drops the current socket without waiting for it to close, and reconnects
+function replaceDeadSocket() {
+    clearPendingPing();
+    const old = ws;
+    ws = null;              // from here on the old socket's events are ignored
+    try { if (old) old.close(); } catch (e) { /* already closed */ }
+    showStatus('Connection to the server lost — reconnecting…');
+    reconnectNow();
+}
 
 function connectWebSocket() {
-    try {
-        ws = new WebSocket(`ws://${location.host}`);
-        ws.addEventListener('open', () => {
-            console.log('Connected to server!');
-            ws.send(JSON.stringify({ command: 'page_loaded' }));
-            initializeInputEvents(); 
-        });
+    // don't open a second connection while one is open or opening
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-        ws.addEventListener('message', (event) => {
+    let wasOpen = false;
+    const socket = new WebSocket(`ws://${location.host}`);
+    ws = socket;
+
+    socket.addEventListener('open', () => {
+        if (ws !== socket) return;      // replaced while connecting
+        wasOpen = true;
+        const reconnected = reconnectDelay > 1000 || document.getElementById('conn_status').hidden === false;
+        reconnectDelay = 1000;
+        if (debug) console.log('Connected to server');
+        // drop the old listing first: the server's folder may have changed
+        // while we were away, and if the new listing fails, stale links
+        // would download same-named files from the wrong folder
+        clearFileList();
+        // the server answers with the log, the current folder and its files
+        socket.send(JSON.stringify({ command: 'page_loaded' }));
+        initializeInputEvents();
+        if (reconnected) showStatus('Reconnected', 'ok'); else hideStatus();
+    });
+
+    // a failed connect also fires 'close', which handles the retry
+    socket.addEventListener('error', () => {
+        if (debug) console.log('WebSocket error');
+    });
+
+    socket.addEventListener('close', () => {
+        if (ws !== socket) return;      // an older socket; already replaced
+        ws = null;
+        clearPendingPing();
+        showStatus(wasOpen ? 'Connection to the server lost — reconnecting…'
+                           : 'Can’t reach the server — retrying…');
+        scheduleReconnect();
+    });
+
+    socket.addEventListener('message', (event) => {
+            if (ws !== socket) return;  // late message from a replaced socket
             const msg = JSON.parse(event.data);
             if (debug) console.log(msg);
 
             switch (msg.command) {
+                case 'pong':
+                    if (pendingPing && msg.id === pendingPing.id) clearPendingPing();
+                    break;
                 case 'add_to_log':
                     updateLog(msg.data);
                     break;
@@ -45,32 +168,13 @@ function connectWebSocket() {
                     populateFileList(msg);
                     break;
                 case 'pofo_error':
-                    console.log('PoFo connection error!!');
-                    alert('No connection to Atari Portfolio.');
+                    showStatus('No connection to the Atari Portfolio — is it in server mode?', 'info');
                     break;
                 default:
-                    console.log('error');
+                    if (debug) console.log('Unknown message', msg);
                     break;
             }
-        });
-
-        ws.addEventListener('error', () => {
-            console.log('WebSocket error');
-            alert('Error connecting to WebSocket.');
-        });
-
-        ws.addEventListener('close', () => {
-            ws = null;
-            console.log('Disconnected!!');
-            alert('WebSocket connection lost.');
-            setTimeout(() => {
-                ws = new WebSocket(`ws://${location.host}`);
-            }, 5000);
-        });
-    } catch (error) {
-        console.error(error);
-        return;
-    }
+    });
 }
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -90,10 +194,10 @@ function initializeInputEvents() {
     const options = Array.from(toggle.querySelectorAll('[role="radio"]'));
 
     // switching drives goes to that drive's root
+    // only clear the folder field once the server has the request
     const choose = (drive) => {
-        if (drive !== currentDrive) {
+        if (drive !== currentDrive && sendFolder(drive)) {
             document.getElementById('current_folder').value = '';
-            sendFolder(drive);
         }
     };
 
@@ -198,24 +302,18 @@ function setLog(data) {
 ///////////////////////////////////////////////////////////////////////////////
 // asks the server to clear the log for every open page
 function clearLog() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ command: 'clear_log' }));
-    } else {
-        setLog('');
-    }
+    sendMessage({ command: 'clear_log' });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // asks the server to switch to another folder (e.g. 'a:\' or 'c:\TESTDIR\')
+// returns false (changing nothing on the page) if not connected
 function sendFolder(folder) {
+    if (!sendMessage({ command: 'set_folder', folder })) return false;
     currentDrive = folder.slice(0, 3).toLowerCase();
     showDrive(currentDrive);
-    const message = {
-        command: 'set_folder',
-        folder,
-    };
-    ws.send(JSON.stringify(message));
     clearFileList();
+    return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
