@@ -1,0 +1,30 @@
+# systemd service for PiPortfolioDaemon
+#
+# Install (once):
+#   sudo cp piportfolio.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now piportfolio
+#
+# Day to day:
+#   sudo systemctl restart piportfolio    # after editing the code
+#   journalctl -u piportfolio -f          # follow the server log
+#
+# Port 80 needs net.ipv4.ip_unprivileged_port_start=80 (or run on another
+# port by adding Environment=PORT=3000 below).
+
+[Unit]
+Description=PiPortfolioDaemon - Atari Portfolio file transfer web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=atari
+Group=atari
+WorkingDirectory=/home/atari/PiPortfolioDaemon
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
