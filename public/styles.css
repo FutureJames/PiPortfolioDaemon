@@ -84,14 +84,17 @@ body {
 /* Header                                                                    */
 /* ------------------------------------------------------------------------- */
 
+/* The header is exactly as wide as the logo, so the title centres on it,
+   and the whole block is centred on the page */
 .header-wrapper {
-    margin-bottom: 28px;
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto 28px;
 }
 
 #logo {
     display: block;
     width: 100%;
-    max-width: 400px;
     height: auto;
 }
 
@@ -100,7 +103,8 @@ h1 {
     font-weight: 600;
     color: var(--text-muted);
     letter-spacing: 0.01em;
-    margin: 2px 0 0 15%;
+    text-align: center;
+    margin: 2px 0 0;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -192,14 +196,6 @@ input[type="submit"]:disabled {
 :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
-}
-
-/* Header controls (Clear, drive toggle) share one height so the two card
-   headers mirror each other */
-
-.card-header > button {
-    height: var(--control-h);
-    padding: 0 14px;
 }
 
 /* Drive toggle: a pill with the two Portfolio drives; a white thumb slides
@@ -338,7 +334,17 @@ input[type="submit"]:disabled {
     color: var(--text-muted);
 }
 
-.folder-row > button {
+/* Activity card: Clear sits in a row matching the directory row, so it lines
+   up with Open and the log starts level with the file list */
+.log-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+}
+
+/* Open and Clear share one size */
+.folder-row > button,
+.log-actions > button {
     height: var(--control-h);
     padding: 0 14px;
 }
@@ -348,11 +354,46 @@ input[type="submit"]:disabled {
     min-height: 220px;
     max-height: 400px;
     overflow-y: auto;
-    margin: 0 -8px;     /* rows bleed to the card padding */
+    /* same grey panel as the activity log */
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px;       /* + row padding = same text inset as the log */
 }
 
 #file_list {
     list-style: none;
+}
+
+/* Up-one-level row: same shape as a file row, in the accent colour so it
+   reads as navigation rather than a file */
+.dir-up {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 8px;
+    font: 600 0.95rem var(--mono);
+    line-height: 1.5;
+    color: var(--accent);
+    background: transparent;
+    border-radius: 6px;
+    text-align: left;
+}
+
+.dir-up[hidden] {
+    display: none;
+}
+
+.dir-up:hover {
+    background: var(--accent-soft);
+}
+
+.dir-up-target {
+    margin-left: auto;
+    font-weight: 400;
+    font-size: 0.85rem;
+    color: var(--text-muted);
 }
 
 #file_list:empty::before {
@@ -361,6 +402,44 @@ input[type="submit"]:disabled {
     padding: 8px;
     color: var(--text-muted);
     font-size: 0.9rem;
+}
+
+/* While a listing is loading: no "No files", show the spinner instead */
+#dir_container.is-loading #file_list:empty::before {
+    content: none;
+}
+
+.list-loading {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+#dir_container.is-loading .list-loading {
+    display: flex;
+}
+
+.spinner {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spinner {
+        animation-duration: 2.4s;
+    }
 }
 
 #file_list a {
@@ -400,7 +479,7 @@ input[type="submit"]:disabled {
 
 #drop_zone {
     border: 2px dashed var(--border);
-    border-radius: var(--radius);
+    border-radius: 8px;     /* same as the file list and activity log panels */
     background: var(--surface-muted);
     padding: 18px 14px;
     text-align: center;
@@ -542,4 +621,93 @@ input[type="submit"]:disabled {
     .conn-status[data-kind="warn"]::before {
         animation: none;
     }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Help button and panel                                                     */
+/* ------------------------------------------------------------------------- */
+
+/* Help: a "?" circle in the Activity header, mirroring the drive toggle.
+   Same height as the toggle, so its radius matches the toggle's ends. */
+.help-button {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: var(--control-h);
+    height: var(--control-h);
+    padding: 0;
+    border-radius: 50%;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1;
+    /* filled with the same pink-purple as the toggle and Upload button */
+    color: #fff;
+    background: var(--button-bg);
+    border: 0;
+}
+
+.help-button:hover {
+    background: var(--button-hover);
+}
+
+.help-dialog {
+    width: min(560px, calc(100% - 32px));
+    max-height: calc(100% - 48px);
+    margin: auto;
+    padding: 0;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+}
+
+.help-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.help-header {
+    position: sticky;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.help-header h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.help-header button {
+    height: var(--control-h);
+    padding: 0 14px;
+}
+
+.help-body {
+    padding: 8px 20px 20px;
+    font-size: 0.92rem;
+    line-height: 1.55;
+}
+
+.help-body h3 {
+    margin: 16px 0 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.help-body code,
+.help-body kbd {
+    font: 0.85em var(--mono);
+    padding: 1px 5px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 4px;
 }

@@ -22,6 +22,22 @@ if (typeof window.WebSocket === 'undefined') {
     window.addEventListener('online', checkConnection);
 }
 enableDropZone();
+enableHelp();
+
+///////////////////////////////////////////////////////////////////////////////
+// Help panel: opens from the Activity header; closes with Close, Esc
+// (built into <dialog>) or a click outside the panel
+
+function enableHelp() {
+    const dialog = document.getElementById('help_dialog');
+    const openButton = document.getElementById('help_open');
+    if (!dialog || !openButton) return;
+    openButton.addEventListener('click', () => dialog.showModal());
+    document.getElementById('help_close').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();    // the backdrop area
+    });
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -125,7 +141,7 @@ function connectWebSocket() {
         // drop the old listing first: the server's folder may have changed
         // while we were away, and if the new listing fails, stale links
         // would download same-named files from the wrong folder
-        clearFileList();
+        startListLoading();
         // the server answers with the log, the current folder and its files
         socket.send(JSON.stringify({ command: 'page_loaded' }));
         initializeInputEvents();
@@ -141,6 +157,7 @@ function connectWebSocket() {
         if (ws !== socket) return;      // an older socket; already replaced
         ws = null;
         clearPendingPing();
+        setListLoading(false);          // no listing is coming on this socket
         showStatus(wasOpen ? 'Connection to the server lost — reconnecting…'
                            : 'Can’t reach the server — retrying…');
         scheduleReconnect();
@@ -168,6 +185,7 @@ function connectWebSocket() {
                     populateFileList(msg);
                     break;
                 case 'pofo_error':
+                    setListLoading(false);  // the listing failed; none is coming
                     showStatus('No connection to the Atari Portfolio — is it in server mode?', 'info');
                     break;
                 default:
@@ -184,6 +202,7 @@ const DRIVES = {
     'c:\\': 'RAM disk',
 };
 let currentDrive = 'c:\\';
+let currentPath = 'c:\\';       // full folder being listed, e.g. 'c:\GAMES\SAVES\'
 
 function initializeInputEvents() {
     // set up once, even though the WebSocket may reconnect
@@ -210,6 +229,7 @@ function initializeInputEvents() {
         }
     });
     document.getElementById('folder_open').addEventListener('click', openFolder);
+    document.getElementById('dir_up').addEventListener('click', goUp);
 
     options.forEach((option, i) => {
         option.addEventListener('click', () => choose(option.dataset.drive));
@@ -237,6 +257,36 @@ function getFolder(folder) {
         showDrive(drive);
         // the part after the drive, without the trailing backslash
         document.getElementById('current_folder').value = folder.slice(3).replace(/\\+$/, '');
+        setCurrentPath(folder);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// up-one-level row at the top of the file list
+
+// the folders below the drive, e.g. 'c:\GAMES\SAVES\' -> ['GAMES', 'SAVES']
+function pathParts(path) {
+    return path.slice(3).split('\\').filter(Boolean);
+}
+
+function setCurrentPath(path) {
+    currentPath = path.slice(0, 3).toLowerCase() + path.slice(3);
+    const parts = pathParts(currentPath);
+    const up = document.getElementById('dir_up');
+    up.hidden = parts.length === 0;     // nothing above a drive's root
+    if (!up.hidden) {
+        const parent = currentPath.slice(0, 3) + parts.slice(0, -1).map(p => p + '\\').join('');
+        document.getElementById('dir_up_target').textContent = parent.toUpperCase();
+        up.title = `Up to ${parent.toUpperCase()}`;
+    }
+}
+
+// opens the parent of the current folder
+function goUp() {
+    const parentParts = pathParts(currentPath).slice(0, -1);
+    const parent = currentPath.slice(0, 3) + parentParts.map(p => p + '\\').join('');
+    if (sendFolder(parent)) {
+        document.getElementById('current_folder').value = parentParts.join('\\');
     }
 }
 
@@ -268,8 +318,28 @@ function clearFileList() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Loading state for the file list: hides "No files" and shows a spinner
+// until the listing (or an error) arrives. The timeout is a safety net so
+// the spinner can't get stuck if no reply ever comes.
+const LIST_LOADING_TIMEOUT = 30000;
+let listLoadingTimer = null;
+
+function setListLoading(loading) {
+    clearTimeout(listLoadingTimer);
+    document.getElementById('dir_container').classList.toggle('is-loading', loading);
+    if (loading) listLoadingTimer = setTimeout(() => setListLoading(false), LIST_LOADING_TIMEOUT);
+}
+
+// empties the list and shows the spinner while a new listing is fetched
+function startListLoading() {
+    clearFileList();
+    setListLoading(true);
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // lists all the files for the folder
 function populateFileList({ files = [] } = {}) {
+    setListLoading(false);
     const fileList = document.getElementById('file_list');
     fileList.innerHTML = '';
     if (files === false) return;
@@ -312,7 +382,8 @@ function sendFolder(folder) {
     if (!sendMessage({ command: 'set_folder', folder })) return false;
     currentDrive = folder.slice(0, 3).toLowerCase();
     showDrive(currentDrive);
-    clearFileList();
+    setCurrentPath(folder);
+    startListLoading();
     return true;
 }
 

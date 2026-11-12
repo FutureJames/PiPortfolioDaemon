@@ -17,7 +17,7 @@ const upload = multer({ storage: storage });
 const router = express.Router();
 
 router.get('/', getHomePage);
-router.get('*.(html|css|js|png)', serveStaticFiles);
+router.get('*.(html|css|js|png|ico)', serveStaticFiles);
 router.get('/download/:filename', downloadFile);
 router.post('/upload', upload.single('filesToUpload'), uploadFile);
 
