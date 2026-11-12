@@ -18,12 +18,28 @@
             <section class="card column1" aria-labelledby="files_title">
                 <div class="card-header">
                     <h2 class="card-title" id="files_title">Portfolio files</h2>
+                    <div class="drive-toggle" id="drive_toggle" role="radiogroup" aria-label="Drive" data-drive="c:\">
+                        <span class="drive-thumb" aria-hidden="true"></span>
+                        <button type="button" role="radio" data-drive="a:\" aria-checked="false" tabindex="-1" title="A:\ removable card">
+                            <span class="drive-letter">A:\</span>
+                            <span class="drive-name">Card</span>
+                        </button>
+                        <button type="button" role="radio" data-drive="c:\" aria-checked="true" tabindex="0" title="C:\ RAM disk">
+                            <span class="drive-letter">C:\</span>
+                            <span class="drive-name">RAM</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="folder-row">
-                    <label for="current_folder" class="visually-hidden">Folder</label>
-                    <input type="text" id="current_folder" name="current_folder" spellcheck="false" autocomplete="off">
-                    <button type="button" onclick="sendFolder()">Open</button>
+                    <label for="current_folder" class="path-field">
+                        <span class="visually-hidden">Directory</span>
+                        <span class="path-prefix" id="path_prefix" aria-hidden="true">C:\</span>
+                        <input type="text" id="current_folder" name="current_folder"
+                               placeholder="Directory (blank for root)"
+                               spellcheck="false" autocomplete="off" autocapitalize="characters">
+                    </label>
+                    <button type="button" id="folder_open" class="button-secondary">Open</button>
                 </div>
 
                 <div id="dir_container">

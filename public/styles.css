@@ -18,6 +18,7 @@
     --success: #2e7d4f;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
     --radius: 12px;
+    --control-h: 34px;          /* height of small header controls */
     --mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
     --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     color-scheme: light;
@@ -108,7 +109,7 @@ h1 {
 
 .content {
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 20px;
     align-items: stretch;
 }
@@ -128,7 +129,11 @@ h1 {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;    /* last resort on tiny screens: control drops below the title */
     gap: 12px;
+    /* same height in every card, with or without a button (e.g. Clear),
+       so the card titles line up across the page */
+    min-height: var(--control-h);
     margin-bottom: 12px;
 }
 
@@ -138,6 +143,7 @@ h1 {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-muted);
+    white-space: nowrap;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -188,38 +194,161 @@ input[type="submit"]:disabled {
     outline-offset: 2px;
 }
 
-.folder-row {
+/* Header controls (Clear, drive toggle) share one height so the two card
+   headers mirror each other */
+
+.card-header > button {
+    height: var(--control-h);
+    padding: 0 14px;
+}
+
+/* Drive toggle: a pill with the two Portfolio drives; a white thumb slides
+   under the selected one */
+
+.drive-toggle {
+    --pad: 3px;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    height: var(--control-h);
+    padding: var(--pad);
+    background: var(--button-bg);
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+.drive-thumb {
+    position: absolute;
+    top: var(--pad);
+    bottom: var(--pad);
+    left: var(--pad);
+    width: calc(50% - var(--pad));
+    background: #fff;
+    border-radius: 999px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+    transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+.drive-toggle[data-drive="c:\\"] .drive-thumb {
+    transform: translateX(100%);
+}
+
+.drive-toggle button {
+    position: relative;     /* sit above the thumb */
     display: flex;
-    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 12px;
+    font-size: 0.85rem;
+    color: #fff;
+    background: transparent;
+    border-radius: 999px;
+    font-weight: 600;
+    transition: color 0.25s ease, background-color 0.15s ease;
 }
 
-#current_folder {
-    flex: 1;
-    min-width: 0;
-    font: 0.95rem var(--mono);
-    color: var(--text);
-    background: var(--surface-muted);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 10px;
+.drive-toggle button:hover {
+    background: rgba(255, 255, 255, 0.12);
 }
 
-#current_folder:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
+.drive-toggle button[aria-checked="true"],
+.drive-toggle button[aria-checked="true"]:hover {
+    color: var(--button-bg);
+    background: transparent;
+    cursor: default;
+}
+
+.drive-toggle button:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: -4px;
+}
+
+.drive-toggle button[aria-checked="true"]:focus-visible {
+    outline-color: var(--button-bg);
+}
+
+.drive-letter {
+    font: 700 0.85rem var(--mono);
+}
+
+.drive-name {
+    font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .drive-thumb,
+    .drive-toggle button {
+        transition: none;
+    }
 }
 
 /* ------------------------------------------------------------------------- */
 /* File list                                                                 */
 /* ------------------------------------------------------------------------- */
 
+/* Directory field: fixed drive prefix + folder name + Open */
+
+.folder-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.path-field {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    height: var(--control-h);
+    padding: 0 10px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: text;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.path-field:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.path-prefix {
+    font: 700 0.9rem var(--mono);
+    color: var(--accent);
+    padding-right: 2px;
+}
+
+#current_folder {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    font: 0.9rem var(--mono);
+    text-transform: uppercase;
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    outline: none;
+}
+
+#current_folder::placeholder {
+    font-family: var(--sans);
+    text-transform: none;
+    color: var(--text-muted);
+}
+
+.folder-row > button {
+    height: var(--control-h);
+    padding: 0 14px;
+}
+
 #dir_container {
     flex: 1;
     min-height: 220px;
     max-height: 400px;
     overflow-y: auto;
-    margin: 12px -8px 0;
+    margin: 0 -8px;     /* rows bleed to the card padding */
 }
 
 #file_list {
@@ -336,7 +465,9 @@ input[type="submit"]:disabled {
 /* Small screens                                                             */
 /* ------------------------------------------------------------------------- */
 
-@media (max-width: 760px) {
+/* Stack the cards once the files card would be too narrow for its title and
+   the full drive toggle side by side (needs about 782px of window width). */
+@media (max-width: 800px) {
     body {
         padding: 20px 16px 32px;
     }
@@ -348,5 +479,12 @@ input[type="submit"]:disabled {
     }
     #log {
         min-height: 260px;
+    }
+    .card {
+        padding: 16px 14px;
+    }
+    .drive-toggle button {
+        padding: 0 9px;
+        gap: 4px;
     }
 }

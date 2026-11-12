@@ -74,19 +74,86 @@ function connectWebSocket() {
 }
 ///////////////////////////////////////////////////////////////////////////////
 
+// The Portfolio has two drives: A:\ (removable card) and C:\ (RAM disk).
+const DRIVES = {
+    'a:\\': 'Removable card',
+    'c:\\': 'RAM disk',
+};
+let currentDrive = 'c:\\';
+
 function initializeInputEvents() {
-    document.getElementById('current_folder').addEventListener('keypress', function(event) {
+    // set up once, even though the WebSocket may reconnect
+    if (initializeInputEvents.done) return;
+    initializeInputEvents.done = true;
+
+    const toggle = document.getElementById('drive_toggle');
+    const options = Array.from(toggle.querySelectorAll('[role="radio"]'));
+
+    // switching drives goes to that drive's root
+    const choose = (drive) => {
+        if (drive !== currentDrive) {
+            document.getElementById('current_folder').value = '';
+            sendFolder(drive);
+        }
+    };
+
+    // directory field: Enter or Open lists that folder on the current drive
+    const folderInput = document.getElementById('current_folder');
+    folderInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
             event.preventDefault();
-            sendFolder();
+            openFolder();
         }
     });
+    document.getElementById('folder_open').addEventListener('click', openFolder);
+
+    options.forEach((option, i) => {
+        option.addEventListener('click', () => choose(option.dataset.drive));
+        // arrow keys move between the two drives, like a radio group
+        option.addEventListener('keydown', (event) => {
+            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+                event.preventDefault();
+                const next = options[(i + 1) % options.length];
+                choose(next.dataset.drive);
+                next.focus();
+            }
+        });
+    });
+
+    showDrive(currentDrive);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// reads the folder name from the text field
+// shows the folder the server is using (sent as e.g. 'c:\' or 'c:\TESTDIR\')
 function getFolder(folder) {
-    document.getElementById('current_folder').value = folder;
+    folder = folder || '';
+    const drive = folder.slice(0, 2).toLowerCase() + '\\';
+    if (DRIVES[drive]) {
+        currentDrive = drive;
+        showDrive(drive);
+        // the part after the drive, without the trailing backslash
+        document.getElementById('current_folder').value = folder.slice(3).replace(/\\+$/, '');
+    }
+}
+
+// lists the directory typed in the field (blank = drive root)
+function openFolder() {
+    const name = document.getElementById('current_folder').value
+        .trim()
+        .replace(/\//g, '\\')           // accept / as well as \
+        .replace(/^\\+|\\+$/g, '');     // the drive prefix supplies the leading \
+    sendFolder(currentDrive + (name ? name + '\\' : ''));
+}
+
+function showDrive(drive) {
+    const toggle = document.getElementById('drive_toggle');
+    toggle.dataset.drive = drive;   // moves the thumb (see styles.css)
+    toggle.querySelectorAll('[role="radio"]').forEach(option => {
+        const selected = option.dataset.drive === drive;
+        option.setAttribute('aria-checked', String(selected));
+        option.tabIndex = selected ? 0 : -1;
+    });
+    document.getElementById('path_prefix').textContent = drive.toUpperCase();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -139,9 +206,10 @@ function clearLog() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// send a new folder string to the server
-function sendFolder() {
-    const folder = document.getElementById('current_folder').value;
+// asks the server to switch to another folder (e.g. 'a:\' or 'c:\TESTDIR\')
+function sendFolder(folder) {
+    currentDrive = folder.slice(0, 3).toLowerCase();
+    showDrive(currentDrive);
     const message = {
         command: 'set_folder',
         folder,
