@@ -8,6 +8,20 @@ const { getDirListFromPortfolio } = require('../utils');
 
 let clients = [];
 
+// Activity log kept on the server so it survives page reloads
+// (uploads submit a form, which reloads the page). Capped to the last
+// MAX_LOG_LINES lines so it can't grow without bound on the Pi.
+const MAX_LOG_LINES = 500;
+let activityLog = '';
+
+function appendToActivityLog(text) {
+    activityLog += text;
+    const lines = activityLog.split('\n');
+    if (lines.length > MAX_LOG_LINES + 1) {
+        activityLog = lines.slice(-(MAX_LOG_LINES + 1)).join('\n');
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 function normalizePortfolioPath(path_str) {
@@ -48,6 +62,7 @@ const setupWebSockets = (server) => {
             switch (message.command) {
                 case 'page_loaded':
                     console.log("- web page was loaded");
+                    ws.send(JSON.stringify({ command: 'set_log', data: activityLog }));
                     normalizePortfolioPath(config.portfolioPath);
                     sendDirList();
                     break;
@@ -57,6 +72,10 @@ const setupWebSockets = (server) => {
                     normalizePortfolioPath(message.folder);
                     sendToActivityLog(`📁 ${config.portfolioPath}\n`);
                     sendDirList();
+                    break;
+                case 'clear_log':
+                    activityLog = '';
+                    clients.forEach(client => client.send(JSON.stringify({ command: 'set_log', data: '' })));
                     break;
                 default:
                     console.log('Unknown command:', message.command);
@@ -108,6 +127,7 @@ function sendSetFolder(folder) {
  * @param {string} message - The message to send.
  */
 const sendToActivityLog = (message) => {
+    appendToActivityLog(message);
     const newMessage = {
         command: 'add_to_log',
         data: message
