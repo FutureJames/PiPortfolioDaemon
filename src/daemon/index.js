@@ -17,7 +17,7 @@ function setupDaemon() {
         awaitWriteFinish: true
     }).on('add', async (filePath) => {
         const fileName = path.basename(filePath);
-        sendToActivityLog(`\u{2b06} ${fileName} `);
+        sendToActivityLog(`\u{2b06}\u{fe0f} ${fileName} `);
         process.stdout.write(`- uploading ${fileName} to Portfolio `);
 
         try {

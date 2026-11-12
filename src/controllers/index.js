@@ -49,7 +49,7 @@ const downloadFile = (req, res) => {
   
   if (receiveFileFromPortfolio(fileName)) {
     const filePath = path.join('./', fileName);
-    sendToActivityLog(`\u{2b07} ${fileName} `);
+    sendToActivityLog(`\u{2b07}\u{fe0f} ${fileName} `);
     
     res.download(filePath, fileName, (err) => {
       if (err) {
