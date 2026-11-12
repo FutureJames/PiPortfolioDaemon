@@ -163,37 +163,38 @@ function enableDropZone() {
         this.classList.add('over'); 
     };
 
-    dropZone.ondrop = function(evt) {
-        // Check file size
-        for(let i = 0; i < evt.dataTransfer.files.length; i++) {
-            if (evt.dataTransfer.files[i].size > maxSize) {
-                alert('File size should not exceed ' + maxSizeInMB + ' MB');
-                return;
-            }
+    let submitButton = document.getElementById('file_submit');
+    let fileName = document.getElementById('file_name');
+
+    // shows the chosen file and enables Upload only for a valid file
+    function updateSelection() {
+        const file = fileInput.files[0];
+        if (file && file.size > maxSize) {
+            alert('File size should not exceed ' + maxSizeInMB + ' MB');
+            fileInput.value = '';
         }
-        fileInput.files = evt.dataTransfer.files;
+        const chosen = fileInput.files[0];
+        fileName.textContent = chosen ? chosen.name : '';
+        submitButton.disabled = !chosen;
+    }
+
+    dropZone.ondrop = function(evt) {
+        // always stop the browser from opening the dropped file
         evt.preventDefault();
-        this.classList.remove('over'); 
-        
+        this.classList.remove('over');
+        if (!evt.dataTransfer.files.length) return;
+        fileInput.files = evt.dataTransfer.files;
+        updateSelection();
     };
 
     dropZone.ondragleave = function(evt) {
-        this.classList.remove('over'); 
+        if (!this.contains(evt.relatedTarget)) {
+            this.classList.remove('over');
+        }
     };
 
-    fileInput.onchange = function() {
-        // Check file size
-        for(let i = 0; i < fileInput.files.length; i++) {
-            if (fileInput.files[i].size > maxSize) {
-                alert('File size should not exceed ' + maxSizeInMB + ' MB');
-                return;
-            }
-        }
-        let files = fileInput.files;
-        for (let i = 0; i < files.length; i++) {
-            console.log(files[i].name);
-        }
-    };
+    fileInput.onchange = updateSelection;
+    updateSelection();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

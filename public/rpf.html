@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>    
+<head>
     <meta charset="UTF-8" />
     <title>Atari Portfolio</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -8,32 +8,52 @@
     <link href="favicon.ico" rel="icon" type="image/x-icon" />
 </head>
 <body>
-    <div class="header-wrapper">
-        <img id="logo" src="logo.png">
-        <h1>File Transfer</h1>
-    </div>
-    <div class="content">
-        <div class="column1">
-            <label for="current_folder">Folder</label>
-            <input type="text" id="current_folder" name="current_folder">
-            <button type="submit" onclick="sendFolder()">Submit</button>
-            <div id="dir_container">
-                <ul id="file_list"></ul>
-            </div>
-            <div id="upload_form">
-                <div id="drop_zone">
-                    <form action="/upload" method="post" enctype="multipart/form-data">
-                        <input type="file" name="filesToUpload" id="filesToUpload">
-                        <br />
-                        <input type="submit" value="Upload File" id="file_submit" name="submit">
-                    </form>
+    <div class="page">
+        <header class="header-wrapper">
+            <img id="logo" src="logo.png" alt="Atari Portfolio">
+            <h1>File Transfer</h1>
+        </header>
+
+        <main class="content">
+            <section class="card column1" aria-labelledby="files_title">
+                <div class="card-header">
+                    <h2 class="card-title" id="files_title">Portfolio files</h2>
                 </div>
-            </div>    
-        </div>
-        <div class="column2">
-            <button id="clear" name="clear" onclick="clearLog()">Clear</button>
-            <textarea id="log" name="log" readonly="readonly"></textarea>
-            </div>
+
+                <div class="folder-row">
+                    <label for="current_folder" class="visually-hidden">Folder</label>
+                    <input type="text" id="current_folder" name="current_folder" spellcheck="false" autocomplete="off">
+                    <button type="button" onclick="sendFolder()">Open</button>
+                </div>
+
+                <div id="dir_container">
+                    <ul id="file_list"></ul>
+                </div>
+
+                <div id="upload_form">
+                    <div id="drop_zone">
+                        <form action="/upload" method="post" enctype="multipart/form-data">
+                            <p class="drop-hint">Drop a file here to send it to the Portfolio</p>
+                            <div class="upload-actions">
+                                <label for="filesToUpload" class="button button-secondary">Choose file</label>
+                                <input type="file" name="filesToUpload" id="filesToUpload" class="visually-hidden">
+                                <input type="submit" value="Upload" id="file_submit" name="submit" disabled>
+                            </div>
+                            <div id="file_name" aria-live="polite"></div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card column2" aria-labelledby="log_title">
+                <div class="card-header">
+                    <h2 class="card-title" id="log_title">Activity</h2>
+                    <button id="clear" name="clear" class="button-secondary" type="button" onclick="clearLog()">Clear</button>
+                </div>
+                <label for="log" class="visually-hidden">Activity log</label>
+                <textarea id="log" name="log" readonly="readonly"></textarea>
+            </section>
+        </main>
     </div>
     <script src="rpf.js" type="application/javascript"></script>
 </body>
