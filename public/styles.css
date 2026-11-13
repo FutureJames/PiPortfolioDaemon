@@ -414,6 +414,11 @@ input[type="submit"]:disabled {
     content: 'No card in A:\\';
 }
 
+/* The Portfolio isn't answering (not in server mode, or not connected) */
+#dir_container.is-offline #file_list:empty::before {
+    content: 'Portfolio not connected';
+}
+
 /* While a listing is loading: no "No files", show the spinner instead */
 #dir_container.is-loading #file_list:empty::before {
     content: none;
@@ -476,6 +481,18 @@ input[type="submit"]:disabled {
 }
 
 #file_list a:hover::after {
+    opacity: 1;
+}
+
+/* A download on its way from the Portfolio (about 1.5 KB a second) */
+#file_list a.is-downloading {
+    cursor: progress;
+    background: var(--accent-soft);
+}
+
+#file_list a.is-downloading::after {
+    content: 'Downloading…';
+    font-size: 0.8rem;
     opacity: 1;
 }
 

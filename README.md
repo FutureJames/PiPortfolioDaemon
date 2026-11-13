@@ -212,15 +212,15 @@ Anything copied into `~/PiPortfolioDaemon/upload/` is sent to the Portfolio auto
 
 Click the **?** button on the page for the same instructions.
 
-**Before you start** — connect the Portfolio and start its file transfer server mode (**Setup** menu, or **Atari + S**, **F**, **S**). If it isn't listening, the page shows *"No connection to the Atari Portfolio"*.
+**Before you start** — connect the Portfolio and start its file transfer server mode (**Setup** menu, or **Atari + S**, **F**, **S**). If it isn't listening, the page shows *"No connection to the Atari Portfolio"* and the list says *Portfolio not connected*. The page checks again every 15 seconds and shows the files by itself once the Portfolio answers.
 
 **Drives** — the toggle switches between `A:\` (the removable memory card) and `C:\` (the built-in RAM disk). The list shows the files on that drive. If the memory card is out, the activity log shows ❌ *(no card in A:)* and the page switches back to `C:\`.
 
 **Folders** — the Portfolio doesn't report folders in its file listings, so open one by typing its name in the directory field (for example `GAMES` or `GAMES\SAVES`) and pressing **Enter** or **Open**. Leave it blank for the drive's root. **↰ ..** at the top of the list goes up one level. If the folder doesn't exist, the activity log shows ❌ *(folder not found)* and the page goes back up to the nearest folder that does.
 
-**Downloading** — click a file name.
+**Downloading** — click a file name. It shows *Downloading…* until the file arrives (transfers run at roughly 1.5 KB a second). If the download fails, a message says why and the activity log shows ❌.
 
-**Uploading** — drop one or more files onto the upload box to send them straight away, or use **Choose files**, then **Upload**. They go to the folder shown above the list and replace any files with the same names. A bar under the buttons counts the files as each one reaches the Portfolio. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again.
+**Uploading** — drop one or more files onto the upload box to send them straight away, or use **Choose files**, then **Upload**. They go to the folder shown above the list and replace any files with the same names. A bar under the buttons counts the files as each one reaches the Portfolio. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again. Uploads run at roughly 1 KB a second, so a large file takes a while; the rest of the page keeps working meanwhile.
 
 **Activity** — lists uploads (⬆️), downloads (⬇️) and folder changes (📁), with ✅ or ❌ for each one (❌ with the reason, such as a folder that wasn't found). It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
 
@@ -262,7 +262,9 @@ Settings are in [`src/config/index.js`](src/config/index.js):
 | `appPort` | `80` | Web server port. The `PORT` environment variable overrides it |
 | `portfolioPath` | `c:\` | Drive/folder shown when the server starts. A command-line argument overrides it (`node server.js a:\`) |
 | `sharedFolder` | `upload/` | Folder watched for files to send to the Portfolio |
-| `portfolioTimeout` | `4000` | How long (ms) to wait for the Portfolio when listing or downloading |
+| `portfolioAnswerTimeout` | `5000` | How long (ms) to wait for the Portfolio to answer at all before reporting no connection |
+| `portfolioStallTimeout` | `15000` | How long (ms) a transfer may go without progress before it counts as stopped part-way. A transfer that keeps moving is never cut off |
+| `portfolioRetryInterval` | `15000` | While the Portfolio isn't answering and a page is open, how often (ms) to check whether it's back |
 
 To use another port with the service, add a line under `[Service]` in `/etc/systemd/system/piportfolio.service`, for example `Environment=PORT=3000`, then run `sudo systemctl daemon-reload && sudo systemctl restart piportfolio`.
 
@@ -277,8 +279,11 @@ The page can't reach the server. Check that the Pi is on and that the service is
 **The service fails with `EACCES` on port 80**
 The port 80 setting from [step 7](#7-allow-the-web-server-to-use-port-80) is missing. Apply it, or use another port.
 
-**A transfer seems to hang**
-While a file transfer is running, the server can't answer anything else, so the page waits until it finishes. If the Portfolio isn't in server mode, a transfer waits for it — put the Portfolio into server mode and it will continue.
+**A transfer stopped part-way**
+If server mode is left or the cable is pulled during a transfer, the server gives up after 15 seconds without progress and the activity log says *the Portfolio stopped answering part-way*. The Portfolio may still show *Receiving…* or *Transmitting…*: press **Esc** (it can take a few seconds to respond) and start server mode again. An interrupted upload can leave a partial copy of the file on the Portfolio; delete it there or upload the file again.
+
+**A folder change or download waits**
+The Portfolio handles one request at a time, so these wait for any transfer already under way (a large upload can take many minutes).
 
 **No icon in Safari's tab**
 Safari doesn't load site icons for pages opened by IP address. Open the page by hostname instead (e.g. `http://atari.local/`).

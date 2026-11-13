@@ -7,6 +7,7 @@ const config = require('../config');
 const { getDirListFromPortfolio, folderExists } = require('../utils');
 
 let clients = [];
+let loggedOffline = false;      // the log already says the Portfolio isn't answering
 
 // Activity log kept on the server so it survives page reloads
 // (uploads submit a form, which reloads the page). Capped to the last
@@ -56,28 +57,86 @@ function logFolder(status) {
 // After a listing: if the folder doesn't exist, go up a level (logging
 // each step) until one does. If that ends at A:\ with no card in, switch
 // to C:\, the built-in RAM disk, which always exists.
-function leaveMissingFolder(status) {
+async function leaveMissingFolder(status) {
     while (status === 'missing' && config.portfolioPath.length > 3) {
         console.log(`- folder not found, going up: ${config.portfolioPath}`);
         normalizePortfolioPath(parentFolder(config.portfolioPath));
-        status = sendDirList();
+        status = await sendDirList();
         logFolder(status);
     }
     if (status === 'nocard') {
         console.log('- no card in A:, switching to c:\\');
         normalizePortfolioPath('c:\\');
-        logFolder(sendDirList());
+        logFolder(await sendDirList());
     }
+}
+
+/**
+ * Lists the current folder again (e.g. after an upload). If it has gone
+ * meanwhile (the A: card was taken out), logs that and moves to a folder
+ * that exists, as on page load.
+ */
+async function refreshFolder() {
+    const status = await sendDirList();
+    if (status === 'missing' || status === 'nocard') {
+        logFolder(status);
+        await leaveMissingFolder(status);
+    }
+    return status;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-function sendPortfolioError() {
+// tells the pages the Portfolio isn't answering (they show a message that
+// stays until a listing arrives)
+function sendPortfolioError(reason) {
     const newMessage = {
         command: 'pofo_error',
+        reason,
     };
     clients.forEach(client => client.send(JSON.stringify(newMessage)));
-    // console.log("- PoFo connection error");
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Whether the Portfolio is answering. While it isn't and a page is open, the
+// server tries a listing every portfolioRetryInterval; when one works, every
+// page gets the files and its "no connection" message goes away, without a
+// reload. Nothing is tried while no page is open (a page asks on load).
+
+let portfolioOnline = null;     // null until the first command
+let retryTimer = null;
+
+/**
+ * Notes the outcome of talking to the Portfolio.
+ * @param {PortfolioError|null} error - null if it answered
+ */
+function notePortfolioResult(error) {
+    const online = !error || error.kind === 'failed';   // 'failed': it answered, then refused
+    if (online === portfolioOnline) {
+        if (!online) scheduleRetry();
+        return;
+    }
+    portfolioOnline = online;
+    if (online) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+    } else {
+        console.log(`- Portfolio not answering ${error.reason}`);
+        scheduleRetry();
+    }
+}
+
+function scheduleRetry() {
+    if (retryTimer) return;
+    retryTimer = setTimeout(async () => {
+        retryTimer = null;
+        if (portfolioOnline !== false || clients.length === 0) return;
+        const status = await sendDirList();
+        if (status === 'error') return;     // still not answering; tried again later
+        console.log('- Portfolio is answering again');
+        logFolder(status);
+        await leaveMissingFolder(status);
+    }, config.portfolioRetryInterval);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -94,44 +153,13 @@ const setupWebSockets = (server) => {
 //        console.log(`- client connected: ${clients.length}`);
 
         ws.on('message', (event) => {
-            const message = JSON.parse(event);
-            let reply;
-            switch (message.command) {
-                case 'page_loaded':
-                    console.log("- web page was loaded");
-                    ws.send(JSON.stringify({ command: 'set_log', data: activityLog }));
-                    normalizePortfolioPath(config.portfolioPath);
-                    {
-                        // the current folder may have disappeared since it was
-                        // opened (e.g. the RAM disk was wiped, or the A: card
-                        // was taken out): if so, say so and move to one that exists
-                        const status = sendDirList();
-                        if (status === 'missing' || status === 'nocard') {
-                            logFolder(status);
-                            leaveMissingFolder(status);
-                        }
-                    }
-                    break;
-                case 'set_folder':
-                    console.log(`- setting Portfolio folder: ${message.folder}`);
-                    normalizePortfolioPath(message.folder);
-                    {
-                        const status = sendDirList();
-                        logFolder(status);
-                        leaveMissingFolder(status);
-                    }
-                    break;
-                case 'clear_log':
-                    activityLog = '';
-                    clients.forEach(client => client.send(JSON.stringify({ command: 'set_log', data: '' })));
-                    break;
-                case 'ping':
-                    // liveness check from the page (e.g. after sleep or a network change)
-                    ws.send(JSON.stringify({ command: 'pong', id: message.id }));
-                    break;
-                default:
-                    console.log('Unknown command:', message.command);
+            let message;
+            try {
+                message = JSON.parse(event);
+            } catch (error) {
+                return;
             }
+            handleMessage(ws, message).catch(error => console.error('- error handling', message.command, error));
         });
 
         ws.on('close', () => {
@@ -140,39 +168,84 @@ const setupWebSockets = (server) => {
         });
     });
 };
+
+// Messages from a page. Portfolio commands run in the background, one at a
+// time, so the server keeps answering (pings, other pages) meanwhile.
+async function handleMessage(ws, message) {
+    switch (message.command) {
+        case 'page_loaded':
+            console.log("- web page was loaded");
+            ws.send(JSON.stringify({ command: 'set_log', data: activityLog }));
+            normalizePortfolioPath(config.portfolioPath);
+            {
+                // the current folder may have disappeared since it was
+                // opened (e.g. the RAM disk was wiped, or the A: card
+                // was taken out): if so, say so and move to one that exists
+                const status = await sendDirList();
+                if (status === 'missing' || status === 'nocard') {
+                    logFolder(status);
+                    await leaveMissingFolder(status);
+                } else if (status === 'error') {
+                    // say so in the log once, not on every page load
+                    if (!loggedOffline) logFolder(status);
+                    loggedOffline = true;
+                }
+            }
+            break;
+        case 'set_folder':
+            console.log(`- setting Portfolio folder: ${message.folder}`);
+            normalizePortfolioPath(message.folder);
+            {
+                const status = await sendDirList();
+                logFolder(status);
+                await leaveMissingFolder(status);
+            }
+            break;
+        case 'clear_log':
+            activityLog = '';
+            clients.forEach(client => client.send(JSON.stringify({ command: 'set_log', data: '' })));
+            break;
+        case 'ping':
+            // liveness check from the page (e.g. after sleep or a network change)
+            ws.send(JSON.stringify({ command: 'pong', id: message.id }));
+            break;
+        default:
+            console.log('Unknown command:', message.command);
+    }
+}
   
 ///////////////////////////////////////////////////////////////////////////////
 /**
  * Sends the current folder's file list to every open page.
- * @returns {'ok'|'missing'|'error'} listed, folder doesn't exist, or the
- *   Portfolio didn't answer
+ * @returns {Promise<'ok'|'missing'|'nocard'|'error'>} listed, folder doesn't
+ *   exist, no card in A:, or the Portfolio didn't answer
  */
-function sendDirList() {
-    const files = getDirListFromPortfolio();
-    if (!files) {
-        sendPortfolioError();
+async function sendDirList() {
+    let files;
+    let exists = true;
+    try {
+        files = await getDirListFromPortfolio();
+        // an empty listing may mean the folder doesn't exist; only check then
+        if (files.length === 0) exists = await folderExists();
+    } catch (error) {
+        // includes the Portfolio stopping between the two requests: report
+        // it like any other lost contact, not as "No files"
+        notePortfolioResult(error);
+        sendPortfolioError(error.reason);
         return 'error';
     }
+    notePortfolioResult(null);
+    loggedOffline = false;
     const newMessage = {
         command: 'dir',
         files: files
     };
-    // an empty listing may mean the folder doesn't exist; only check then
-    if (files.length === 0) {
-        const exists = folderExists();
-        if (exists === null) {
-            // the Portfolio stopped answering between the two requests:
-            // report it like any other lost contact, not as "No files"
-            sendPortfolioError();
-            return 'error';
-        }
-        if (exists === false) {
-            // a missing drive root means the A: memory card is out
-            if (config.portfolioPath.length <= 3) {
-                newMessage.nocard = true;
-            } else {
-                newMessage.missing = true;
-            }
+    if (exists === false) {
+        // a missing drive root means the A: memory card is out
+        if (config.portfolioPath.length <= 3) {
+            newMessage.nocard = true;
+        } else {
+            newMessage.missing = true;
         }
     }
     clients.forEach(client => client.send(JSON.stringify(newMessage)));
@@ -209,12 +282,6 @@ const sendToActivityLog = (message) => {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-/**
- * Tells the pages that one uploaded file has finished, for the upload
- * progress bar (the activity log gets its own human-readable line).
- * @param {string} file - the file name
- * @param {boolean} ok - whether it reached the Portfolio
- */
 // file name -> ids of the pages that uploaded files of that name, oldest first
 const uploadOwners = new Map();
 
@@ -243,7 +310,8 @@ const forgetUpload = (file, page) => {
 }
 
 /**
- * Tells the pages that a file reached the Portfolio (or failed), with the id of
+ * Tells the pages that one uploaded file has finished, for the upload
+ * progress bar (the activity log gets its own human-readable line). Carries the id of
  * the page that uploaded it; other pages ignore it. Files put in the shared
  * folder some other way have no owner.
  */
@@ -256,6 +324,6 @@ const sendUploadResult = (file, ok) => {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError, sendUploadResult, expectUpload, forgetUpload };
+module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError, sendUploadResult, expectUpload, forgetUpload, notePortfolioResult, refreshFolder };
 ///////////////////////////////////////////////////////////////////////////////
   

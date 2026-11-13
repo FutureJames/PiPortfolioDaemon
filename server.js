@@ -22,6 +22,9 @@ if (!doesPathExists(config.tmpFolder)) {
 }
 if (!isCommandAvailable('rpfolio')) {
     throw new Error('rpfolio command not found!');
+}
+if (!isCommandAvailable('stdbuf')) {
+    throw new Error('stdbuf command not found (part of coreutils)!');
 }   
 
 // Set the drive variable based on command line parameters
