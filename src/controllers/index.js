@@ -6,7 +6,7 @@ const fs = require('fs');
 
 const config = require('../config');
 const { receiveFileFromPortfolio } = require('../utils');
-const { sendToActivityLog, sendDirList, sendPortfolioError } = require('../websockets');
+const { sendToActivityLog, sendPortfolioError, notePortfolioResult } = require('../websockets');
 
 const multer  = require('multer');
 const upload = multer({ dest: config.sharedFolder });
@@ -38,38 +38,40 @@ const serveStaticFiles = (req, res) => {
  * @param {object} req - Express request object.
  * @param {object} res - Express response object.
  */
-const downloadFile = (req, res) => {
+const downloadFile = async (req, res) => {
   const fileName = req.params.filename;
   // Only plain file names: no paths, so the download and the delete below
   // can't reach files outside the working directory.
   if (!fileName || fileName !== path.basename(fileName) || /[\\/\0]/.test(fileName) || fileName === '..' || fileName === '.') {
     return res.status(400).send('Invalid file name.');
   }
-  process.stdout.write(`- downloading ${fileName} from Portfolio `);
-  
-  if (receiveFileFromPortfolio(fileName)) {
-    const filePath = path.join('./', fileName);
-    sendToActivityLog(`\u{2b07}\u{fe0f} ${fileName} `);
-    
-    res.download(filePath, fileName, (err) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).send(`Error downloading the file: ${fileName}`);
-      }
-      
-      try {
-        fs.unlinkSync(filePath);
-        sendToActivityLog('\u{2705}\n');
-        console.log('\u{2705}');
-      } catch (error) {
-        console.error('Error during deletion:', error.message);
-        sendToActivityLog('\u{274c}\n');
-        console.log('\u{274c}');
-      }
-    });
-  } else {
-    sendPortfolioError();
+  console.log(`- downloading ${fileName} from Portfolio`);
+
+  // runs in the background (the server keeps answering meanwhile) and lands
+  // in a temporary folder of its own, removed afterwards
+  const result = await receiveFileFromPortfolio(fileName);
+  if (!result.ok) {
+    const { reason, kind } = result.error;
+    console.log(`- downloading ${fileName} from Portfolio \u{274c} ${reason}`);
+    sendToActivityLog(`\u{2b07}\u{fe0f} ${fileName} \u{274c} ${reason}\n`);
+    notePortfolioResult(result.error);
+    if (kind !== 'failed') sendPortfolioError(reason);
+    // the page shows this text; 503 when the Portfolio isn't answering
+    return res.status(kind === 'failed' ? 500 : 503).type('text/plain').send(`${fileName} ${reason}`);
   }
+  notePortfolioResult(null);
+
+  res.download(result.path, fileName, (err) => {
+    result.cleanup();
+    if (err) {
+      // e.g. the browser gave up part-way
+      console.error(`- sending ${fileName} to the browser failed: ${err.message}`);
+      sendToActivityLog(`\u{2b07}\u{fe0f} ${fileName} \u{274c} (not received by the browser)\n`);
+      return;
+    }
+    console.log(`- downloading ${fileName} from Portfolio \u{2705}`);
+    sendToActivityLog(`\u{2b07}\u{fe0f} ${fileName} \u{2705}\n`);
+  });
 };
 
 ///////////////////////////////////////////////////////////////////////////////

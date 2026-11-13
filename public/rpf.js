@@ -189,13 +189,14 @@ function connectWebSocket() {
                     break;
                 case 'dir':
                     populateFileList(msg);
+                    portfolioAnswering();
                     break;
                 case 'upload_result':
                     handleUploadResult(msg);
                     break;
                 case 'pofo_error':
-                    setListLoading(false);  // the listing failed; none is coming
-                    showStatus('No connection to the Atari Portfolio — is it in server mode?', 'info');
+                    if (msg.offline === false) portfolioReportedError(msg.reason);
+                    else portfolioNotAnswering(msg.reason);
                     break;
                 default:
                     if (debug) console.log('Unknown message', msg);
@@ -327,10 +328,48 @@ function clearFileList() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// The Portfolio isn't answering: the message stays up and the list says so
+// (rather than "No files") until a listing arrives. The server checks again
+// by itself and sends the files when the Portfolio is back.
+let portfolioOffline = false;
+
+function portfolioNotAnswering(reason = '') {
+    portfolioOffline = true;
+    setListLoading(false);      // the listing failed; none is coming
+    clearFileList();
+    document.getElementById('dir_container').classList.remove('is-missing', 'is-nocard');
+    document.getElementById('dir_container').classList.add('is-offline');
+    const detail = reason.replace(/^\(|\)$/g, '');
+    showStatus(/no connection/i.test(reason) || !detail
+        ? 'No connection to the Atari Portfolio — is it in server mode? Checking again every few seconds…'
+        : `Atari Portfolio: ${detail}`, 'error');
+}
+
+// it answered but reported an error (e.g. a protocol error): show it, stop
+// the spinner, and leave the list as it was; this isn't a lost connection
+function portfolioReportedError(reason = '') {
+    setListLoading(false);
+    // it did answer, so it is connected again
+    portfolioOffline = false;
+    document.getElementById('dir_container').classList.remove('is-offline');
+    const detail = reason.replace(/^\(|\)$/g, '');
+    showStatus(detail ? `Atari Portfolio reported an error: ${detail}` : 'Atari Portfolio reported an error', 'info');
+}
+
+function portfolioAnswering() {
+    document.getElementById('dir_container').classList.remove('is-offline');
+    if (!portfolioOffline) return;
+    portfolioOffline = false;
+    showStatus('Atari Portfolio connected', 'ok');
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Loading state for the file list: hides "No files" and shows a spinner
 // until the listing (or an error) arrives. The timeout is a safety net so
-// the spinner can't get stuck if no reply ever comes.
-const LIST_LOADING_TIMEOUT = 30000;
+// the spinner can't get stuck if no reply ever comes. It is long because a
+// listing waits for any transfer already under way (a big upload can take
+// minutes at about 1 KB a second).
+const LIST_LOADING_TIMEOUT = 5 * 60000;
 let listLoadingTimer = null;
 
 function setListLoading(loading) {
@@ -342,7 +381,7 @@ function setListLoading(loading) {
 // empties the list and shows the spinner while a new listing is fetched
 function startListLoading() {
     clearFileList();
-    document.getElementById('dir_container').classList.remove('is-missing', 'is-nocard');
+    document.getElementById('dir_container').classList.remove('is-missing', 'is-nocard', 'is-offline');
     setListLoading(true);
 }
 
@@ -361,11 +400,47 @@ function populateFileList({ files = [], missing = false, nocard = false } = {}) 
     files.forEach(file => {
         const listItem = document.createElement('li');
         const link = document.createElement('a');
-        link.href = `/download/${file}`;
+        link.href = `/download/${encodeURIComponent(file)}`;
         link.textContent = file;
+        link.addEventListener('click', downloadFile);
         listItem.appendChild(link);
         fileList.appendChild(listItem);
     });
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Downloads a file in the background, so a failure shows a message instead of
+// leaving the page for an error page. The link shows "Downloading…" meanwhile
+// (a transfer runs at about 1.5 KB a second).
+async function downloadFile(event) {
+    event.preventDefault();
+    const link = event.currentTarget;
+    if (link.classList.contains('is-downloading')) return;
+    const name = link.textContent;
+    link.classList.add('is-downloading');
+    try {
+        const res = await fetch(link.href);
+        if (!res.ok) {
+            const text = (await res.text()).trim();
+            // 503: the Portfolio isn't answering; keep the message up until
+            // it is back (the list says "Portfolio not connected" meanwhile)
+            showStatus(text ? `Download failed: ${text}` : `Download of ${name} failed`,
+                res.status === 503 ? 'error' : 'info');
+            return;
+        }
+        const url = URL.createObjectURL(await res.blob());
+        const save = document.createElement('a');
+        save.href = url;
+        save.download = name;
+        document.body.appendChild(save);
+        save.click();
+        save.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+        showStatus(`Download of ${name} failed — check the connection to the Pi`, 'info');
+    } finally {
+        link.classList.remove('is-downloading');
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -1,60 +1,57 @@
 const chokidar = require('chokidar');
 const path = require('path');
 const fs = require('fs');
-const { runPortfolioCommand } = require('../utils');
+const { transmitFileToPortfolio, PortfolioError } = require('../utils');
 
 const config = require('../config');
-const { sendToActivityLog, sendDirList, sendUploadResult } = require('../websockets');
+const {
+    sendToActivityLog, refreshFolder, sendUploadResult, sendPortfolioError, notePortfolioResult,
+} = require('../websockets');
 
 /**
  * Sets up a daemon to watch for added files in the shared folder and
- * transfers them to the specified drive.
+ * transfers them to the specified drive. Transfers run in the background,
+ * one at a time and in order, so the web server keeps answering meanwhile.
+ * Files already in the folder when the server starts are sent too (and, like
+ * any upload, removed if the Portfolio doesn't take them).
  */
 function setupDaemon() {
     chokidar.watch(config.sharedFolder, {
         ignored: /(^|[\/\\])\../,
         persistent: true,
         awaitWriteFinish: true
-    }).on('add', async (filePath) => {
-        const fileName = path.basename(filePath);
-        sendToActivityLog(`\u{2b06}\u{fe0f} ${fileName} `);
-
-        const result = transferFile(filePath);
-        // only claim the file is gone if deleting it actually worked
-        const cleanup = result.removed
-            ? (result.ok ? '' : '; removed from the Pi')
-            : `; could not be removed from the Pi (${result.removeError}) and may be sent again on the next start`;
-        if (result.ok) {
-            console.log(`- uploading ${fileName} to Portfolio \u{2705}${cleanup}`);
-            sendToActivityLog(`\u{2705}\n`);
-        } else {
-            console.log(`- uploading ${fileName} to Portfolio \u{274c} ${result.reason}${cleanup}`);
-            sendToActivityLog(`\u{274c} ${result.reason}\n`);
-        }
-        sendUploadResult(fileName, result.ok);
-        // (no terminal beep: the server runs as a service, and the bell
-        // character hid the next log line in the system journal)
-        sendDirList();
+    }).on('add', (filePath) => {
+        uploadFile(filePath).catch(error => console.error('- upload error', error));
     });
 }
 
-/**
- * Turns rpfolio's error output into a short reason for the logs.
- * @param {Error} error - the error thrown by execFileSync
- * @returns {string}
- */
-function failureReason(error) {
-    const stderr = error.stderr ? error.stderr.toString() : '';
-    const lines = stderr
-        .split(/[\r\n]+/)
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith('Waiting for Portfolio'));
-    const text = lines.join(' ');
-    if (/disk full|does not exist/i.test(text)) {
-        return '(folder missing or Portfolio disk full)';
+async function uploadFile(filePath) {
+    const fileName = path.basename(filePath);
+    const result = await transferFile(filePath);
+    // only claim the file is gone if deleting it actually worked
+    const cleanup = result.removed
+        ? (result.ok ? '' : '; removed from the Pi')
+        : `; could not be removed from the Pi (${result.removeError}) and may be sent again on the next start`;
+    // one whole line, written once the result is known: other transfers and
+    // folder changes may log in between
+    if (result.ok) {
+        console.log(`- uploading ${fileName} to Portfolio \u{2705}${cleanup}`);
+        sendToActivityLog(`\u{2b06}\u{fe0f} ${fileName} \u{2705}\n`);
+    } else {
+        console.log(`- uploading ${fileName} to Portfolio \u{274c} ${result.reason}${cleanup}`);
+        sendToActivityLog(`\u{2b06}\u{fe0f} ${fileName} \u{274c} ${result.reason}\n`);
     }
-    if (text) return `(${text})`;
-    return error.code === 'ENOENT' ? '(rpfolio not found)' : `(${error.message})`;
+    sendUploadResult(fileName, result.ok);
+    // (no terminal beep: the server runs as a service, and the bell
+    // character hid the next log line in the system journal)
+    if (result.offline) {
+        // no listing either: the pages already say there's no connection,
+        // and the server checks again by itself
+        sendPortfolioError(result.reason);
+    } else {
+        // also notices a folder that has gone, e.g. the A: card pulled mid-upload
+        await refreshFolder();
+    }
 }
 
 /**
@@ -65,20 +62,26 @@ function failureReason(error) {
  * failed, so the user can simply upload it again.
  *
  * @param {string} filePath - The file path to transfer.
- * @returns {{ok: boolean, reason?: string, removed: boolean, removeError?: string}}
- *   whether the transfer worked (and why not), and whether the file was removed
+ * @returns {Promise<{ok: boolean, reason?: string, offline?: boolean, removed: boolean, removeError?: string}>}
+ *   whether the transfer worked (and why not), whether the Portfolio wasn't
+ *   answering, and whether the file was removed
  */
-const transferFile = (filePath) => {
+const transferFile = async (filePath) => {
     if (!fs.existsSync(filePath)) {
         return { ok: false, reason: '(file no longer exists)', removed: true };
     }
     let result = { ok: true };
     try {
-        // keep stderr so a failure can say why
-        runPortfolioCommand(config.transferCommand, { file: filePath, drive: config.portfolioPath },
-            { stdio: ['ignore', 'pipe', 'pipe'] });
+        await transmitFileToPortfolio(filePath);
+        notePortfolioResult(null);
     } catch (error) {
-        result = { ok: false, reason: failureReason(error) };
+        let reason = error instanceof PortfolioError ? error.reason : `(${error.message})`;
+        if (error.kind === 'stalled') {
+            // the Portfolio keeps what it received so far (the Pi can't delete it)
+            reason = '(the Portfolio stopped answering part-way, a partial copy may be left on it; restart its server mode)';
+        }
+        result = { ok: false, reason, offline: error.kind === 'noanswer' || error.kind === 'stalled' };
+        notePortfolioResult(error);
     }
     try {
         fs.unlinkSync(filePath);
