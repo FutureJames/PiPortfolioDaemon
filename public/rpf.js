@@ -399,49 +399,126 @@ function sendFolder(folder) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// Upload box: files dropped on it are sent straight away; Choose files +
+// Upload does the same for touch screens and keyboards. Several files can
+// be sent at once. Uploads go in the background (no page reload); the
+// activity log then shows each file reaching the Portfolio.
 function enableDropZone() {
-    let dropZone = document.getElementById('drop_zone');
-    let fileInput = document.getElementById('filesToUpload');
-    let maxSizeInMB = 2; // Maximum size allowed in MB
-    let maxSize = maxSizeInMB * 1024 * 1024; // Convert size to bytes
+    const dropZone = document.getElementById('drop_zone');
+    const form = dropZone.querySelector('form');
+    const fileInput = document.getElementById('filesToUpload');
+    const submitButton = document.getElementById('file_submit');
+    const fileName = document.getElementById('file_name');
+    const hint = document.getElementById('drop_hint');
+    const hintText = hint.textContent;
+    const maxSizeInMB = 2;
+    const maxSize = maxSizeInMB * 1024 * 1024;
 
-    dropZone.ondragover = dropZone.ondragenter = function(evt) {
-        evt.preventDefault();
-        this.classList.add('over'); 
-    };
+    let selected = [];          // files chosen with Choose files, waiting for Upload
+    let uploading = false;
+    let messageTimer = null;
 
-    let submitButton = document.getElementById('file_submit');
-    let fileName = document.getElementById('file_name');
-
-    // shows the chosen file and enables Upload only for a valid file
-    function updateSelection() {
-        const file = fileInput.files[0];
-        if (file && file.size > maxSize) {
-            alert('File size should not exceed ' + maxSizeInMB + ' MB');
-            fileInput.value = '';
+    // keeps the files that can be sent; says which ones are skipped and why
+    function sendable(files) {
+        const ok = [];
+        const tooBig = [];
+        for (const file of files) (file.size > maxSize ? tooBig : ok).push(file);
+        if (tooBig.length) {
+            const names = tooBig.map(f => f.name).join(', ');
+            showStatus(`${names} ${tooBig.length === 1 ? 'is' : 'are'} over ${maxSizeInMB} MB and won’t be sent`, 'info');
         }
-        const chosen = fileInput.files[0];
-        fileName.textContent = chosen ? chosen.name : '';
-        submitButton.disabled = !chosen;
+        return ok;
     }
 
-    dropZone.ondrop = function(evt) {
-        // always stop the browser from opening the dropped file
-        evt.preventDefault();
-        this.classList.remove('over');
-        if (!evt.dataTransfer.files.length) return;
-        fileInput.files = evt.dataTransfer.files;
-        updateSelection();
-    };
+    function describe(files) {
+        if (files.length === 1) return files[0].name;
+        return `${files.length} files: ${files.map(f => f.name).join(', ')}`;
+    }
 
-    dropZone.ondragleave = function(evt) {
-        if (!this.contains(evt.relatedTarget)) {
-            this.classList.remove('over');
+    function showSelection(text) {
+        clearTimeout(messageTimer);
+        fileName.textContent = text;
+        submitButton.disabled = uploading || selected.length === 0;
+    }
+
+    async function uploadFiles(files) {
+        if (files.length === 0) return;
+        if (uploading) {
+            showStatus('Please wait for the current upload to finish', 'info');
+            return;
         }
-    };
+        uploading = true;
+        dropZone.classList.add('is-uploading');
+        hint.textContent = `Uploading ${files.length === 1 ? files[0].name : files.length + ' files'}…`;
+        showSelection('');
 
-    fileInput.onchange = updateSelection;
-    updateSelection();
+        const data = new FormData();
+        files.forEach(file => data.append('filesToUpload', file, file.name));
+        let sent = false;
+        try {
+            const res = await fetch('/upload', { method: 'POST', body: data });
+            sent = res.ok;
+        } catch (error) {
+            sent = false;
+        }
+
+        uploading = false;
+        dropZone.classList.remove('is-uploading');
+        hint.textContent = hintText;
+        selected = [];
+        fileInput.value = '';
+        if (sent) {
+            showSelection(`Sent ${files.length === 1 ? files[0].name : files.length + ' files'} — see Activity`);
+            messageTimer = setTimeout(() => showSelection(''), 4000);
+        } else {
+            showSelection('');
+            showStatus('Upload failed — check the connection to the Pi and try again', 'info');
+        }
+    }
+
+    // Choose files: show what was picked and enable Upload
+    fileInput.addEventListener('change', () => {
+        selected = sendable([...fileInput.files]);
+        showSelection(selected.length ? describe(selected) : '');
+    });
+
+    // Upload button (or Enter): send the chosen files without reloading
+    form.addEventListener('submit', (evt) => {
+        evt.preventDefault();
+        uploadFiles(selected);
+    });
+
+    dropZone.addEventListener('dragenter', (evt) => { evt.preventDefault(); dropZone.classList.add('over'); });
+    dropZone.addEventListener('dragover', (evt) => { evt.preventDefault(); dropZone.classList.add('over'); });
+    dropZone.addEventListener('dragleave', (evt) => {
+        if (!dropZone.contains(evt.relatedTarget)) dropZone.classList.remove('over');
+    });
+
+    // Drop: send the files straight away
+    dropZone.addEventListener('drop', (evt) => {
+        // always stop the browser from opening the dropped files
+        evt.preventDefault();
+        dropZone.classList.remove('over');
+        // take files from the drop items so folders can be told apart and skipped
+        const items = [...(evt.dataTransfer.items || [])];
+        let files = [];
+        let folders = 0;
+        if (items.length) {
+            for (const item of items) {
+                if (item.kind !== 'file') continue;
+                const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+                if (entry && entry.isDirectory) { folders++; continue; }
+                const file = item.getAsFile();
+                if (file) files.push(file);
+            }
+        } else {
+            files = [...evt.dataTransfer.files];
+        }
+        if (folders) showStatus('Folders can’t be uploaded — drop the files inside them instead', 'info');
+        uploadFiles(sendable(files));
+    });
+
+    showSelection('');
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -31,7 +31,8 @@ function setupDaemon() {
             console.log(`- uploading ${fileName} to Portfolio \u{274c} ${result.reason}${cleanup}`);
             sendToActivityLog(`\u{274c} ${result.reason}\n`);
         }
-        process.stdout.write(config.BEEP);
+        // (no terminal beep: the server runs as a service, and the bell
+        // character hid the next log line in the system journal)
         sendDirList();
     });
 }

@@ -501,6 +501,16 @@ input[type="submit"]:disabled {
     background: var(--accent-soft);
 }
 
+/* While files are being sent to the Pi */
+#drop_zone.is-uploading {
+    border-color: var(--accent);
+}
+
+#drop_zone.is-uploading .drop-hint {
+    color: var(--accent);
+    font-weight: 600;
+}
+
 .drop-hint {
     font-size: 0.85rem;
     color: var(--text-muted);

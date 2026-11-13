@@ -19,6 +19,7 @@ const router = express.Router();
 router.get('/', getHomePage);
 router.get('*.(html|css|js|png|ico)', serveStaticFiles);
 router.get('/download/:filename', downloadFile);
-router.post('/upload', upload.single('filesToUpload'), uploadFile);
+// one or more files per upload (the page sends all dropped/chosen files at once)
+router.post('/upload', upload.array('filesToUpload', 20), uploadFile);
 
 module.exports = router;
