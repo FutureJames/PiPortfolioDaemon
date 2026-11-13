@@ -5,7 +5,7 @@
 Connect a Raspberry Pi to the Portfolio's Parallel Interface, then browse, download and upload files from any browser on your network — desktop or phone.
 
 <p align="center">
-  <img src="images/screenshot-desktop.png" width="800" alt="The PiPortfolioDaemon web interface: Portfolio files on the left, activity log on the right" />
+  <img src="images/screenshot-desktop.png" width="800" alt="The PiPortfolioDaemon web interface: the A:\ memory card on the left, with CARDTEST.TXT part-way through downloading (23.2 KB of 57.6 KB), and the activity log on the right" />
 </p>
 
 | | |
@@ -48,7 +48,7 @@ Without these, a Portfolio is mostly a pretty plastic brick. PiPortfolioDaemon r
 ## Features
 
 - **Browse both drives** — switch between `A:\` (memory card) and `C:\` (RAM disk), open folders by name and go back up with `..`
-- **Download** a file with one click
+- **Download** a file with one click, or every file in a folder as one `.zip`
 - **Upload** several files at once by dropping them onto the page (they're sent straight away), with **Choose files**, or by copying them into the Pi's `upload/` folder (for example over a SAMBA share)
 - **Activity log** of uploads, downloads and folder changes, shared by everyone using the page
 - **Built-in help** — the **?** button explains each part of the page
@@ -59,13 +59,13 @@ Without these, a Portfolio is mostly a pretty plastic brick. PiPortfolioDaemon r
 ## Screenshots
 
 <p align="center">
-  <img src="images/screenshot-dark.png" width="560" alt="The web interface in dark mode" />
+  <img src="images/screenshot-dark.png" width="560" alt="The web interface in dark mode: the C:\ RAM disk, with the download-all button filling as the folder downloads" />
   &nbsp;
-  <img src="images/screenshot-mobile.png" width="220" alt="The web interface on a phone" />
+  <img src="images/screenshot-mobile.png" width="220" alt="The web interface on a phone, part-way through downloading a file from the memory card" />
 </p>
 
 <p align="center">
-  <img src="images/screenshot-help.png" width="560" alt="The built-in help panel" />
+  <img src="images/screenshot-help.png" width="560" alt="The built-in help panel, open at its Downloading and Uploading sections" />
 </p>
 
 ---
@@ -122,7 +122,18 @@ sudo apt install -y git build-essential nodejs npm
 
 Node.js 20 or newer is recommended (`node -v`).
 
-### 3. Install WiringPi
+### 3. Install PiPortfolioDaemon
+
+This comes early because building `rpfolio` in step 5 uses a file from it.
+
+```bash
+cd ~
+git clone https://github.com/FutureJames/PiPortfolioDaemon.git
+cd PiPortfolioDaemon
+npm install
+```
+
+### 4. Install WiringPi
 
 `rpfolio` uses the WiringPi library to drive the GPIO pins. It is no longer in Raspberry Pi OS's package list, so build it from source:
 
@@ -136,21 +147,27 @@ sudo apt install -y ./wiringpi_*.deb
 gpio -v        # should print the WiringPi version
 ```
 
-### 4. Build and install `rpfolio`
+### 5. Build and install `rpfolio`
 
-`rpfolio` is the Raspberry Pi build of **transfolio**, the program that talks to the Portfolio.
+`rpfolio` is the Raspberry Pi build of **transfolio**, the program that talks to the Portfolio. These commands build the version this project was tested with, plus a small patch from PiPortfolioDaemon:
 
 ```bash
 cd ~
 git clone https://github.com/skudi/transfolio.git
 cd transfolio
+git checkout ab89073
+git apply ~/PiPortfolioDaemon/extras/rpfolio-file-size.patch
 cc -DRASPIWIRING -O3 transfolio.c -o rpfolio -lwiringPi
 sudo install -m 755 rpfolio /usr/local/bin/rpfolio
 ```
 
+`git checkout` prints a note about a "detached HEAD": that's expected, it just means a fixed version is used rather than the latest.
+
 > **Note:** this compiles directly instead of using `make rpfolio`. The Makefile lists `-lwiringPi` before the source file, which current compilers reject with "undefined reference" errors. The library has to come last, as above.
 
-### 5. Test the connection
+> **Optional:** the patch ([`extras/rpfolio-file-size.patch`](extras/rpfolio-file-size.patch)) makes `rpfolio` print each file's size when downloading. The Portfolio sends the size, but `rpfolio` doesn't normally print it. With it, download progress shows the exact size from the start. Without it (leave out the `git apply` line), sizes are still exact for files up to 28 KB (one block); larger files show an estimate, marked with `~`, until their last block starts.
+
+### 6. Test the connection
 
 On the Portfolio, start the file transfer **server mode** from the **Setup** menu, or press **Atari + S**, then **F**, then **S**. Then, on the Pi:
 
@@ -168,15 +185,6 @@ rpfolio -t HELLO.TXT 'C:\'
 ```
 
 `HELLO.TXT` should appear on the Portfolio's `C:` drive. Delete it there afterwards, and on the Pi with `rm HELLO.TXT`.
-
-### 6. Install PiPortfolioDaemon
-
-```bash
-cd ~
-git clone https://github.com/FutureJames/PiPortfolioDaemon.git
-cd PiPortfolioDaemon
-npm install
-```
 
 ### 7. Allow the web server to use port 80
 

@@ -7,7 +7,7 @@ const fs = require('fs');
 const config = require('../config');
 const { receiveFileFromPortfolio, receiveAllFromPortfolio } = require('../utils');
 const { createZip } = require('../utils/zip');
-const { sendToActivityLog, sendPortfolioError, notePortfolioResult } = require('../websockets');
+const { sendToActivityLog, sendPortfolioError, notePortfolioResult, sendDownloadProgress } = require('../websockets');
 
 const multer  = require('multer');
 const upload = multer({ dest: config.sharedFolder });
@@ -34,6 +34,33 @@ const serveStaticFiles = (req, res) => {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+// how often (ms) to tell the page how far a download has got
+const PROGRESS_INTERVAL = 500;
+
+/**
+ * Progress reports for a download, passed on to the page that asked for it
+ * (?page=...&request=..., both optional) a few times a second, and always
+ * when a file starts or is complete.
+ */
+function downloadProgress(req) {
+  const id = (value) => (typeof value === 'string' && value ? value.slice(0, 64) : null);
+  const owner = id(req.query.page);
+  const request = id(req.query.request);
+  if (!owner) return undefined;
+  let last = 0;
+  let lastFile = null;
+  return (progress) => {
+    const now = Date.now();
+    const newFile = progress.index !== lastFile;
+    const complete = progress.size !== null && progress.received >= progress.size;
+    if (!newFile && !complete && now - last < PROGRESS_INTERVAL) return;
+    last = now;
+    lastFile = progress.index;
+    sendDownloadProgress(owner, request, progress);
+  };
+}
+
+///////////////////////////////////////////////////////////////////////////////
 /**
  * Handles the download of a file from the server.
  * @param {object} req - Express request object.
@@ -50,7 +77,7 @@ const downloadFile = async (req, res) => {
 
   // runs in the background (the server keeps answering meanwhile) and lands
   // in a temporary folder of its own, removed afterwards
-  const result = await receiveFileFromPortfolio(fileName);
+  const result = await receiveFileFromPortfolio(fileName, downloadProgress(req));
   if (!result.ok) {
     const { reason, kind } = result.error;
     console.log(`- downloading ${fileName} from Portfolio \u{274c} ${reason}`);
@@ -111,7 +138,7 @@ const downloadAllFiles = async (req, res) => {
 
   // one rpfolio command for the whole folder, in the background like any
   // other transfer; lands in a temporary folder of its own
-  const result = await receiveAllFromPortfolio(folder);
+  const result = await receiveAllFromPortfolio(folder, downloadProgress(req));
   if (!result.ok) {
     const { reason, kind } = result.error;
     console.log(`- downloading all files in ${folder} from Portfolio \u{274c} ${reason}`);

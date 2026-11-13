@@ -1,0 +1,25 @@
+Make rpfolio print each file's size when receiving from the Portfolio
+
+The Portfolio sends a file's size before the file itself, and rpfolio
+already reads it into `total`, but never prints it. This prints it as
+"File size: N bytes." so PiPortfolioDaemon can show exact download
+progress from the start. Without it, the size of a file larger than
+one 28 KB block is estimated until its last block starts.
+
+Applies to https://github.com/skudi/transfolio at commit ab89073:
+
+    git checkout ab89073
+    git apply ~/PiPortfolioDaemon/extras/rpfolio-file-size.patch
+
+diff --git a/transfolio.c b/transfolio.c
+index ca34608..37526f2 100644
+--- a/transfolio.c
++++ b/transfolio.c
+@@ -718,6 +718,7 @@ void receiveFile(const char * source, const char * dest) {
+ 		}
+ 
+ 		total = controlData[7] + ((int)controlData[8] << 8) + ((int)controlData[9] << 16);
++		printf("File size: %d bytes.\n", total);
+ 
+ 		if (total > blocksize) {
+ 			printf("Transmission consists of %d blocks of payload.\n", (total+blocksize-1)/blocksize);
