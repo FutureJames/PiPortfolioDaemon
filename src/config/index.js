@@ -15,6 +15,9 @@ const config = {
     tmpFolder: '/tmp',
     // !!! TODO: be better w/ *.*
     listCommand: 'rpfolio -l <drive>*.*',
+    // every existing DOS folder contains the NUL device, so this finds "NUL"
+    // only if the folder exists (an empty and a missing folder list the same)
+    existsCommand: 'rpfolio -l <drive>NUL',
     receiveCommand: 'rpfolio -r -f <drive><file> .',
     transferCommand: 'rpfolio -f -t <file> <drive>',
     ID: 'Portfolio Folder Daemon',

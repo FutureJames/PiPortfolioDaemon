@@ -4,7 +4,7 @@ const WebSocket = require('ws');
 const path = require('path');
 
 const config = require('../config');
-const { getDirListFromPortfolio } = require('../utils');
+const { getDirListFromPortfolio, folderExists } = require('../utils');
 
 let clients = [];
 
@@ -31,6 +31,43 @@ function normalizePortfolioPath(path_str) {
     }
     config.portfolioPath = path_str;
     sendSetFolder(config.portfolioPath);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// the folder above, e.g. 'c:\GAMES\SAVES\' -> 'c:\GAMES\', 'c:\GAMES\' -> 'c:\'
+function parentFolder(folder) {
+    const parts = folder.slice(3).split('\\').filter(Boolean);
+    parts.pop();
+    return folder.slice(0, 3) + parts.map(part => part + '\\').join('');
+}
+
+// logs the current folder with the outcome of listing it, like uploads
+function logFolder(status) {
+    const result = {
+        ok: '\u{2705}',
+        missing: '\u{274c} (folder not found)',
+        nocard: '\u{274c} (no card in A:)',
+        error: '\u{274c} (no connection to the Portfolio)',
+    }[status];
+    sendToActivityLog(`📁 ${config.portfolioPath} ${result}\n`);
+}
+
+// After a listing: if the folder doesn't exist, go up a level (logging
+// each step) until one does. If that ends at A:\ with no card in, switch
+// to C:\, the built-in RAM disk, which always exists.
+function leaveMissingFolder(status) {
+    while (status === 'missing' && config.portfolioPath.length > 3) {
+        console.log(`- folder not found, going up: ${config.portfolioPath}`);
+        normalizePortfolioPath(parentFolder(config.portfolioPath));
+        status = sendDirList();
+        logFolder(status);
+    }
+    if (status === 'nocard') {
+        console.log('- no card in A:, switching to c:\\');
+        normalizePortfolioPath('c:\\');
+        logFolder(sendDirList());
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -64,14 +101,25 @@ const setupWebSockets = (server) => {
                     console.log("- web page was loaded");
                     ws.send(JSON.stringify({ command: 'set_log', data: activityLog }));
                     normalizePortfolioPath(config.portfolioPath);
-                    sendDirList();
+                    {
+                        // the current folder may have disappeared since it was
+                        // opened (e.g. the RAM disk was wiped, or the A: card
+                        // was taken out): if so, say so and move to one that exists
+                        const status = sendDirList();
+                        if (status === 'missing' || status === 'nocard') {
+                            logFolder(status);
+                            leaveMissingFolder(status);
+                        }
+                    }
                     break;
                 case 'set_folder':
-                    // Handle the 'set_folder' command here
                     console.log(`- setting Portfolio folder: ${message.folder}`);
                     normalizePortfolioPath(message.folder);
-                    sendToActivityLog(`📁 ${config.portfolioPath}\n`);
-                    sendDirList();
+                    {
+                        const status = sendDirList();
+                        logFolder(status);
+                        leaveMissingFolder(status);
+                    }
                     break;
                 case 'clear_log':
                     activityLog = '';
@@ -95,20 +143,41 @@ const setupWebSockets = (server) => {
   
 ///////////////////////////////////////////////////////////////////////////////
 /**
- * Sends the new folder name to the HTML page.
- * @param {string} folder - The folder name to send.
+ * Sends the current folder's file list to every open page.
+ * @returns {'ok'|'missing'|'error'} listed, folder doesn't exist, or the
+ *   Portfolio didn't answer
  */
 function sendDirList() {
     const files = getDirListFromPortfolio();
     if (!files) {
         sendPortfolioError();
-        return;
+        return 'error';
     }
     const newMessage = {
         command: 'dir',
         files: files
     };
+    // an empty listing may mean the folder doesn't exist; only check then
+    if (files.length === 0) {
+        const exists = folderExists();
+        if (exists === null) {
+            // the Portfolio stopped answering between the two requests:
+            // report it like any other lost contact, not as "No files"
+            sendPortfolioError();
+            return 'error';
+        }
+        if (exists === false) {
+            // a missing drive root means the A: memory card is out
+            if (config.portfolioPath.length <= 3) {
+                newMessage.nocard = true;
+            } else {
+                newMessage.missing = true;
+            }
+        }
+    }
     clients.forEach(client => client.send(JSON.stringify(newMessage)));
+    if (newMessage.nocard) return 'nocard';
+    return newMessage.missing ? 'missing' : 'ok';
 }
 
 ///////////////////////////////////////////////////////////////////////////////

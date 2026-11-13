@@ -214,15 +214,15 @@ Click the **?** button on the page for the same instructions.
 
 **Before you start** — connect the Portfolio and start its file transfer server mode (**Setup** menu, or **Atari + S**, **F**, **S**). If it isn't listening, the page shows *"No connection to the Atari Portfolio"*.
 
-**Drives** — the toggle switches between `A:\` (the removable memory card) and `C:\` (the built-in RAM disk). The list shows the files on that drive.
+**Drives** — the toggle switches between `A:\` (the removable memory card) and `C:\` (the built-in RAM disk). The list shows the files on that drive. If the memory card is out, the activity log shows ❌ *(no card in A:)* and the page switches back to `C:\`.
 
-**Folders** — the Portfolio doesn't report folders in its file listings, so open one by typing its name in the directory field (for example `GAMES` or `GAMES\SAVES`) and pressing **Enter** or **Open**. Leave it blank for the drive's root. **↰ ..** at the top of the list goes up one level. A folder that doesn't exist shows as empty.
+**Folders** — the Portfolio doesn't report folders in its file listings, so open one by typing its name in the directory field (for example `GAMES` or `GAMES\SAVES`) and pressing **Enter** or **Open**. Leave it blank for the drive's root. **↰ ..** at the top of the list goes up one level. If the folder doesn't exist, the activity log shows ❌ *(folder not found)* and the page goes back up to the nearest folder that does.
 
 **Downloading** — click a file name.
 
 **Uploading** — drop a file onto the upload box, or use **Choose file**, then **Upload**. It goes to the folder shown above the list and replaces any file with the same name. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again.
 
-**Activity** — lists uploads (⬆️), downloads (⬇️) and folder changes (📁), with ✅ or ❌ for each transfer. It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
+**Activity** — lists uploads (⬆️), downloads (⬇️) and folder changes (📁), with ✅ or ❌ for each one (❌ with the reason, such as a folder that wasn't found). It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
 
 **Connection** — if the page loses its connection to the Pi, a message appears at the bottom and it reconnects by itself.
 

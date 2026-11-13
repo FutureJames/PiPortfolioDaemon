@@ -179,6 +179,10 @@ function connectWebSocket() {
                     setLog(msg.data);
                     break;
                 case 'set_folder':
+                    // a new folder is about to be listed (also when the server
+                    // moves up from a missing folder): drop the old list and
+                    // its "not found" state so neither carries over
+                    startListLoading();
                     getFolder(msg.folder);
                     break;
                 case 'dir':
@@ -333,13 +337,19 @@ function setListLoading(loading) {
 // empties the list and shows the spinner while a new listing is fetched
 function startListLoading() {
     clearFileList();
+    document.getElementById('dir_container').classList.remove('is-missing', 'is-nocard');
     setListLoading(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// lists all the files for the folder
-function populateFileList({ files = [] } = {}) {
+// lists all the files for the folder; `missing` means the folder doesn't
+// exist on the Portfolio (shown as "Folder not found" instead of "No files"),
+// `nocard` that the A: memory card is out (shown as "No card in A:\")
+function populateFileList({ files = [], missing = false, nocard = false } = {}) {
     setListLoading(false);
+    const container = document.getElementById('dir_container');
+    container.classList.toggle('is-missing', missing === true);
+    container.classList.toggle('is-nocard', nocard === true);
     const fileList = document.getElementById('file_list');
     fileList.innerHTML = '';
     if (files === false) return;
