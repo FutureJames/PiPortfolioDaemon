@@ -18,15 +18,18 @@ function setupDaemon() {
     }).on('add', async (filePath) => {
         const fileName = path.basename(filePath);
         sendToActivityLog(`\u{2b06}\u{fe0f} ${fileName} `);
-        process.stdout.write(`- uploading ${fileName} to Portfolio `);
 
-        try {
-            await transferFile(filePath);
-            console.log(`\u{2705}`);
+        const result = transferFile(filePath);
+        // only claim the file is gone if deleting it actually worked
+        const cleanup = result.removed
+            ? (result.ok ? '' : '; removed from the Pi')
+            : `; could not be removed from the Pi (${result.removeError}) and may be sent again on the next start`;
+        if (result.ok) {
+            console.log(`- uploading ${fileName} to Portfolio \u{2705}${cleanup}`);
             sendToActivityLog(`\u{2705}\n`);
-        } catch (error) {
-            console.log(`\u{274c}`);
-            sendToActivityLog(`\u{274c}\n`);
+        } else {
+            console.log(`- uploading ${fileName} to Portfolio \u{274c} ${result.reason}${cleanup}`);
+            sendToActivityLog(`\u{274c} ${result.reason}\n`);
         }
         process.stdout.write(config.BEEP);
         sendDirList();
@@ -34,24 +37,55 @@ function setupDaemon() {
 }
 
 /**
- * Transfers the specified file to the configured drive and removes the file
- * from the shared folder after transfer.
+ * Turns rpfolio's error output into a short reason for the logs.
+ * @param {Error} error - the error thrown by execFileSync
+ * @returns {string}
+ */
+function failureReason(error) {
+    const stderr = error.stderr ? error.stderr.toString() : '';
+    const lines = stderr
+        .split(/[\r\n]+/)
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('Waiting for Portfolio'));
+    const text = lines.join(' ');
+    if (/disk full|does not exist/i.test(text)) {
+        return '(folder missing or Portfolio disk full)';
+    }
+    if (text) return `(${text})`;
+    return error.code === 'ENOENT' ? '(rpfolio not found)' : `(${error.message})`;
+}
+
+/**
+ * Transfers the specified file to the configured drive, then removes it from
+ * the shared folder. The file is removed whether or not the transfer worked:
+ * a failed file can't be reached from the web page, and leaving it would make
+ * it upload unexpectedly on the next server start. The activity log says it
+ * failed, so the user can simply upload it again.
  *
- * @param {string} fn - The file path to transfer.
- * @returns {boolean} - True if the transfer was successful, false otherwise.
+ * @param {string} filePath - The file path to transfer.
+ * @returns {{ok: boolean, reason?: string, removed: boolean, removeError?: string}}
+ *   whether the transfer worked (and why not), and whether the file was removed
  */
 const transferFile = (filePath) => {
-    try {
-        if (!fs.existsSync(filePath)) {
-            throw new Error(`File does not exist: ${filePath}`);
-        }
-        runPortfolioCommand(config.transferCommand, { file: filePath, drive: config.portfolioPath });
-        fs.unlinkSync(filePath);
-        return true;
-    } catch (error) {
-        console.error(error.message.includes('exist') ? `File does not exist: ${filePath}` : '');
-        return false;
+    if (!fs.existsSync(filePath)) {
+        return { ok: false, reason: '(file no longer exists)', removed: true };
     }
+    let result = { ok: true };
+    try {
+        // keep stderr so a failure can say why
+        runPortfolioCommand(config.transferCommand, { file: filePath, drive: config.portfolioPath },
+            { stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (error) {
+        result = { ok: false, reason: failureReason(error) };
+    }
+    try {
+        fs.unlinkSync(filePath);
+        result.removed = true;
+    } catch (error) {
+        result.removed = false;
+        result.removeError = error.code || error.message;
+    }
+    return result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
