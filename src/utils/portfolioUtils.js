@@ -28,6 +28,10 @@ const { spawn } = require('child_process');
 
 const ANSWERED = /Transmitting file|Transferring file|Fetching directory listing/;
 
+// how much of rpfolio's output to keep (see runNow)
+const MAX_OUTPUT_KEPT = 64 * 1024;
+const OUTPUT_KEPT_EACH_END = 8 * 1024;
+
 class PortfolioError extends Error {
     /**
      * @param {'noanswer'|'stalled'|'failed'} kind
@@ -116,6 +120,12 @@ function runNow(cmd, args) {
 
         child.stdout.on('data', (chunk) => {
             stdout += chunk;
+            // a transfer prints about 30 bytes per byte moved; keep only the
+            // start (where rpfolio reports problems like "File not found")
+            // and the end, not tens of MB. Listings are far below this.
+            if (stdout.length > MAX_OUTPUT_KEPT) {
+                stdout = stdout.slice(0, OUTPUT_KEPT_EACH_END) + stdout.slice(-OUTPUT_KEPT_EACH_END);
+            }
             if (!answered && ANSWERED.test(stdout)) answered = true;
             // any output after the Portfolio answered means data is moving
             if (answered) waitFor(config.portfolioStallTimeout, 'stalled');
@@ -158,26 +168,28 @@ const parseListing = (output) => {
 };
 
 /**
- * Gets the current folder's file list.
+ * Gets a folder's file list.
  * FYI: rpfolio does not return an error if a folder does not exist;
  * see folderExists() to tell an empty folder from a missing one
+ * @param {string} folder - e.g. 'a:\\GAMES\\'
  * @returns {Promise<string[]>} rejects with a PortfolioError
  */
-const getDirListFromPortfolio = async () =>
-    parseListing(await runPortfolioCommand(config.listCommand, { drive: config.portfolioPath })).sort();
+const getDirListFromPortfolio = async (folder) =>
+    parseListing(await runPortfolioCommand(config.listCommand, { drive: folder })).sort();
 
 /**
- * Whether the current folder exists on the Portfolio. Listings never show
+ * Whether a folder exists on the Portfolio. Listings never show
  * folders, and an empty folder lists the same as a missing one, but every
  * existing DOS folder contains the NUL device: listing FOLDER\NUL finds it
  * only if the folder is there. This also works for the A:\ root, which has
  * no NUL while the memory card is out. C:\ is the built-in RAM disk and is
  * always there, so it isn't checked.
+ * @param {string} folder - e.g. 'a:\\GAMES\\'
  * @returns {Promise<boolean>} rejects with a PortfolioError
  */
-const folderExists = async () => {
-    if (config.portfolioPath.toLowerCase() === 'c:\\') return true;
-    const output = await runPortfolioCommand(config.existsCommand, { drive: config.portfolioPath });
+const folderExists = async (folder) => {
+    if (folder.toLowerCase() === 'c:\\') return true;
+    const output = await runPortfolioCommand(config.existsCommand, { drive: folder });
     return parseListing(output).some(name => name.toUpperCase() === 'NUL');
 };
 

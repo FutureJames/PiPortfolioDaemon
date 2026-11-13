@@ -8,6 +8,7 @@ const { getDirListFromPortfolio, folderExists } = require('../utils');
 
 let clients = [];
 let loggedOffline = false;      // the log already says the Portfolio isn't answering
+let lastListError = '(no connection to the Portfolio)';    // why the last listing failed
 
 // Activity log kept on the server so it survives page reloads
 // (uploads submit a form, which reloads the page). Capped to the last
@@ -44,12 +45,14 @@ function parentFolder(folder) {
 }
 
 // logs the current folder with the outcome of listing it, like uploads
+// ('stale': another folder was opened meanwhile; that one gets logged instead)
 function logFolder(status) {
+    if (status === 'stale') return;
     const result = {
         ok: '\u{2705}',
         missing: '\u{274c} (folder not found)',
         nocard: '\u{274c} (no card in A:)',
-        error: '\u{274c} (no connection to the Portfolio)',
+        error: `\u{274c} ${lastListError}`,
     }[status];
     sendToActivityLog(`📁 ${config.portfolioPath} ${result}\n`);
 }
@@ -87,12 +90,14 @@ async function refreshFolder() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// tells the pages the Portfolio isn't answering (they show a message that
-// stays until a listing arrives)
-function sendPortfolioError(reason) {
+// tells the pages something went wrong with the Portfolio. offline: it isn't
+// answering (the pages show a message that stays until a listing arrives);
+// otherwise it answered but reported an error (the pages just show it)
+function sendPortfolioError(reason, offline = true) {
     const newMessage = {
         command: 'pofo_error',
         reason,
+        offline,
     };
     clients.forEach(client => client.send(JSON.stringify(newMessage)));
 }
@@ -132,7 +137,8 @@ function scheduleRetry() {
         retryTimer = null;
         if (portfolioOnline !== false || clients.length === 0) return;
         const status = await sendDirList();
-        if (status === 'error') return;     // still not answering; tried again later
+        // still not answering (tried again later), or another folder was opened
+        if (status === 'error' || status === 'stale') return;
         console.log('- Portfolio is answering again');
         logFolder(status);
         await leaveMissingFolder(status);
@@ -217,21 +223,35 @@ async function handleMessage(ws, message) {
 ///////////////////////////////////////////////////////////////////////////////
 /**
  * Sends the current folder's file list to every open page.
- * @returns {Promise<'ok'|'missing'|'nocard'|'error'>} listed, folder doesn't
- *   exist, no card in A:, or the Portfolio didn't answer
+ *
+ * Portfolio commands wait their turn, so the folder may change before this
+ * finishes (another page, or the user, opens one). The folder is fixed at the
+ * start, both commands use it, and if another folder is open by the end the
+ * result is dropped: the listing for that folder is queued behind this one.
+ * @returns {Promise<'ok'|'missing'|'nocard'|'error'|'stale'>} listed, folder
+ *   doesn't exist, no card in A:, the Portfolio failed, or another folder was
+ *   opened meanwhile
  */
 async function sendDirList() {
+    const folder = config.portfolioPath;
     let files;
     let exists = true;
+    let failure = null;
     try {
-        files = await getDirListFromPortfolio();
+        files = await getDirListFromPortfolio(folder);
         // an empty listing may mean the folder doesn't exist; only check then
-        if (files.length === 0) exists = await folderExists();
+        if (files.length === 0) exists = await folderExists(folder);
     } catch (error) {
         // includes the Portfolio stopping between the two requests: report
         // it like any other lost contact, not as "No files"
-        notePortfolioResult(error);
-        sendPortfolioError(error.reason);
+        failure = error;
+    }
+    if (config.portfolioPath !== folder) return 'stale';
+    if (failure) {
+        notePortfolioResult(failure);
+        lastListError = failure.reason;
+        // 'failed': it answered but reported an error; not "not connected"
+        sendPortfolioError(failure.reason, failure.kind !== 'failed');
         return 'error';
     }
     notePortfolioResult(null);
@@ -242,7 +262,7 @@ async function sendDirList() {
     };
     if (exists === false) {
         // a missing drive root means the A: memory card is out
-        if (config.portfolioPath.length <= 3) {
+        if (folder.length <= 3) {
             newMessage.nocard = true;
         } else {
             newMessage.missing = true;

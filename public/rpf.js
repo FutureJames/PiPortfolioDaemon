@@ -195,7 +195,8 @@ function connectWebSocket() {
                     handleUploadResult(msg);
                     break;
                 case 'pofo_error':
-                    portfolioNotAnswering(msg.reason);
+                    if (msg.offline === false) portfolioReportedError(msg.reason);
+                    else portfolioNotAnswering(msg.reason);
                     break;
                 default:
                     if (debug) console.log('Unknown message', msg);
@@ -342,6 +343,17 @@ function portfolioNotAnswering(reason = '') {
     showStatus(/no connection/i.test(reason) || !detail
         ? 'No connection to the Atari Portfolio — is it in server mode? Checking again every few seconds…'
         : `Atari Portfolio: ${detail}`, 'error');
+}
+
+// it answered but reported an error (e.g. a protocol error): show it, stop
+// the spinner, and leave the list as it was; this isn't a lost connection
+function portfolioReportedError(reason = '') {
+    setListLoading(false);
+    // it did answer, so it is connected again
+    portfolioOffline = false;
+    document.getElementById('dir_container').classList.remove('is-offline');
+    const detail = reason.replace(/^\(|\)$/g, '');
+    showStatus(detail ? `Atari Portfolio reported an error: ${detail}` : 'Atari Portfolio reported an error', 'info');
 }
 
 function portfolioAnswering() {

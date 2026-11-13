@@ -282,6 +282,9 @@ The port 80 setting from [step 7](#7-allow-the-web-server-to-use-port-80) is mis
 **A transfer stopped part-way**
 If server mode is left or the cable is pulled during a transfer, the server gives up after 15 seconds without progress and the activity log says *the Portfolio stopped answering part-way*. The Portfolio may still show *Receiving…* or *Transmitting…*: press **Esc** (it can take a few seconds to respond) and start server mode again. An interrupted upload can leave a partial copy of the file on the Portfolio; delete it there or upload the file again.
 
+**Every transfer fails, but the file list still works**
+After interrupted transfers the Portfolio can get into a state where it lists files but can't open any: uploads fail with *folder missing, no card in A:, or Portfolio disk full* even with plenty of space, and downloads make it beep and show *File not found*. Restarting server mode doesn't clear this; restart the Portfolio itself (for example **Ctrl + Alt + Del**), then start server mode again.
+
 **A folder change or download waits**
 The Portfolio handles one request at a time, so these wait for any transfer already under way (a large upload can take many minutes).
 
