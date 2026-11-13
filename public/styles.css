@@ -514,7 +514,21 @@ input[type="submit"]:disabled {
 .drop-hint {
     font-size: 0.85rem;
     color: var(--text-muted);
-    margin-bottom: 10px;
+    margin-bottom: 6px;
+}
+
+/* "OR" between the drop hint and the Choose files / Upload buttons */
+.drop-or {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+/* while uploading, the hint says "Uploading..." so the "OR" doesn't fit */
+#drop_zone.is-uploading .drop-or {
+    visibility: hidden;
 }
 
 .upload-actions {
