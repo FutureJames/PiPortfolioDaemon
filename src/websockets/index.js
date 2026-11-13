@@ -35,6 +35,36 @@ function normalizePortfolioPath(path_str) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// the folder above, e.g. 'c:\GAMES\SAVES\' -> 'c:\GAMES\', 'c:\GAMES\' -> 'c:\'
+function parentFolder(folder) {
+    const parts = folder.slice(3).split('\\').filter(Boolean);
+    parts.pop();
+    return folder.slice(0, 3) + parts.map(part => part + '\\').join('');
+}
+
+// logs the current folder with the outcome of listing it, like uploads
+function logFolder(status) {
+    const result = {
+        ok: '\u{2705}',
+        missing: '\u{274c} (folder not found)',
+        error: '\u{274c} (no connection to the Portfolio)',
+    }[status];
+    sendToActivityLog(`📁 ${config.portfolioPath} ${result}\n`);
+}
+
+// After a listing: if the folder doesn't exist, go up a level (logging
+// each step) until one does. A drive root always exists, so this ends.
+function leaveMissingFolder(status) {
+    while (status === 'missing' && config.portfolioPath.length > 3) {
+        console.log(`- folder not found, going up: ${config.portfolioPath}`);
+        normalizePortfolioPath(parentFolder(config.portfolioPath));
+        status = sendDirList();
+        logFolder(status);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 function sendPortfolioError() {
     const newMessage = {
         command: 'pofo_error',
@@ -64,21 +94,24 @@ const setupWebSockets = (server) => {
                     console.log("- web page was loaded");
                     ws.send(JSON.stringify({ command: 'set_log', data: activityLog }));
                     normalizePortfolioPath(config.portfolioPath);
-                    sendDirList();
+                    {
+                        // the current folder may have disappeared since it was
+                        // opened (e.g. the RAM disk was wiped): if so, say so
+                        // and go up to one that exists
+                        const status = sendDirList();
+                        if (status === 'missing') {
+                            logFolder(status);
+                            leaveMissingFolder(status);
+                        }
+                    }
                     break;
                 case 'set_folder':
-                    // Handle the 'set_folder' command here
                     console.log(`- setting Portfolio folder: ${message.folder}`);
                     normalizePortfolioPath(message.folder);
                     {
-                        // log the folder change with its outcome, like uploads
                         const status = sendDirList();
-                        const result = {
-                            ok: '\u{2705}',
-                            missing: '\u{274c} (folder not found)',
-                            error: '\u{274c} (no connection to the Portfolio)',
-                        }[status];
-                        sendToActivityLog(`📁 ${config.portfolioPath} ${result}\n`);
+                        logFolder(status);
+                        leaveMissingFolder(status);
                     }
                     break;
                 case 'clear_log':
