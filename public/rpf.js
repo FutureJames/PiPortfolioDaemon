@@ -119,6 +119,7 @@ function replaceDeadSocket() {
     clearPendingPing();
     const old = ws;
     ws = null;              // from here on the old socket's events are ignored
+    abandonUploads();
     try { if (old) old.close(); } catch (e) { /* already closed */ }
     showStatus('Connection to the server lost — reconnecting…');
     reconnectNow();
@@ -157,6 +158,7 @@ function connectWebSocket() {
         if (ws !== socket) return;      // an older socket; already replaced
         ws = null;
         clearPendingPing();
+        abandonUploads();
         setListLoading(false);          // no listing is coming on this socket
         showStatus(wasOpen ? 'Connection to the server lost — reconnecting…'
                            : 'Can’t reach the server — retrying…');
@@ -409,9 +411,14 @@ const uploadProgress = {
     total: 0,
     done: 0,
     failed: 0,
+    lost: false,            // the connection dropped before every result came
     pending: new Map(),     // file name -> how many of that name are still due
     hideTimer: null,
 };
+
+// sent with each upload; the server tags results with it so this page only
+// counts its own files (not crypto.randomUUID: that needs https)
+const PAGE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 function renderUploadProgress() {
     const p = uploadProgress;
@@ -420,12 +427,14 @@ function renderUploadProgress() {
     const text = document.getElementById('progress_text');
     const track = box.querySelector('.progress-track');
     box.classList.toggle('is-active', p.total > 0);
-    box.classList.toggle('has-failures', p.failed > 0);
+    box.classList.toggle('has-failures', p.failed > 0 || p.lost);
     fill.style.width = p.total ? `${(p.done / p.total) * 100}%` : '0%';
     track.setAttribute('aria-valuemax', String(p.total));
     track.setAttribute('aria-valuenow', String(p.done));
     if (p.total === 0) {
         text.innerHTML = '&nbsp;';
+    } else if (p.lost) {
+        text.textContent = `Connection lost after ${p.done} of ${p.total} — see Activity for the rest`;
     } else if (p.done < p.total) {
         text.textContent = `Sending to the Portfolio: ${p.done} of ${p.total}` + (p.failed ? ` (${p.failed} failed)` : '');
     } else {
@@ -438,9 +447,9 @@ function renderUploadProgress() {
 function trackUploads(files) {
     const p = uploadProgress;
     clearTimeout(p.hideTimer);
-    if (p.total > 0 && p.done === p.total) {
-        // the previous batch had finished: start counting afresh
-        Object.assign(p, { total: 0, done: 0, failed: 0 });
+    if (p.total > 0 && (p.done === p.total || p.lost)) {
+        // the previous batch had finished (or was given up): start counting afresh
+        Object.assign(p, { total: 0, done: 0, failed: 0, lost: false });
         p.pending.clear();
     }
     files.forEach(file => p.pending.set(file.name, (p.pending.get(file.name) || 0) + 1));
@@ -451,6 +460,7 @@ function trackUploads(files) {
 // the server didn't take the files after all: stop waiting for them
 function untrackUploads(files) {
     const p = uploadProgress;
+    if (p.lost) return;     // already given up on this batch
     files.forEach(file => {
         const left = (p.pending.get(file.name) || 0) - 1;
         if (left > 0) p.pending.set(file.name, left); else p.pending.delete(file.name);
@@ -461,8 +471,9 @@ function untrackUploads(files) {
 }
 
 // one file finished on the server (ignores uploads from other pages or the shared folder)
-function handleUploadResult({ file, ok }) {
+function handleUploadResult({ file, ok, owner }) {
     const p = uploadProgress;
+    if (owner !== PAGE_ID || p.lost) return;
     const left = p.pending.get(file) || 0;
     if (!left) return;
     if (left > 1) p.pending.set(file, left - 1); else p.pending.delete(file);
@@ -474,14 +485,25 @@ function handleUploadResult({ file, ok }) {
 
 function finishUploadsIfDone() {
     const p = uploadProgress;
-    if (p.done < p.total) return;
+    if (p.done < p.total && !p.lost) return;
     clearTimeout(p.hideTimer);
     // leave the summary up for a moment, then clear the bar
     p.hideTimer = setTimeout(() => {
-        Object.assign(p, { total: 0, done: 0, failed: 0 });
+        Object.assign(p, { total: 0, done: 0, failed: 0, lost: false });
         p.pending.clear();
         renderUploadProgress();
-    }, p.failed ? 8000 : 4000);
+    }, p.failed || p.lost ? 8000 : 4000);
+}
+
+// The connection dropped: results sent meanwhile are lost and aren't replayed,
+// so stop waiting for them. The activity log, reloaded on reconnect, has them.
+function abandonUploads() {
+    const p = uploadProgress;
+    if (p.total === 0 || p.done >= p.total || p.lost) return;
+    p.lost = true;
+    p.pending.clear();
+    renderUploadProgress();
+    finishUploadsIfDone();
 }
 
 // Upload box: files dropped on it are sent straight away; Choose files +
@@ -497,6 +519,7 @@ function enableDropZone() {
     const hint = document.getElementById('drop_hint');
     const hintText = hint.textContent;
     const maxSizeInMB = 2;
+    const MAX_FILES_PER_UPLOAD = 20;    // matches the server's limit per request
     const maxSize = maxSizeInMB * 1024 * 1024;
 
     let selected = [];          // files chosen with Choose files, waiting for Upload
@@ -506,10 +529,27 @@ function enableDropZone() {
     function sendable(files) {
         const ok = [];
         const tooBig = [];
-        for (const file of files) (file.size > maxSize ? tooBig : ok).push(file);
+        const repeated = new Set();
+        const names = new Set();
+        for (const file of files) {
+            if (file.size > maxSize) { tooBig.push(file); continue; }
+            // one file per name: same-named files (from different folders)
+            // would overwrite each other on the Pi and the Portfolio anyway
+            if (names.has(file.name)) { repeated.add(file.name); continue; }
+            names.add(file.name);
+            ok.push(file);
+        }
+        const notes = [];
         if (tooBig.length) {
-            const names = tooBig.map(f => f.name).join(', ');
-            showStatus(`${names} ${tooBig.length === 1 ? 'is' : 'are'} over ${maxSizeInMB} MB and won’t be sent`, 'info');
+            const list = tooBig.map(f => f.name).join(', ');
+            notes.push(`${list} ${tooBig.length === 1 ? 'is' : 'are'} over ${maxSizeInMB} MB and won’t be sent`);
+        }
+        if (repeated.size) {
+            notes.push(`only one file named ${[...repeated].join(', ')} will be sent`);
+        }
+        if (notes.length) {
+            const text = notes.join('; ');
+            showStatus(text.charAt(0).toUpperCase() + text.slice(1), 'info');
         }
         return ok;
     }
@@ -537,14 +577,24 @@ function enableDropZone() {
 
         // start counting before sending: results can arrive before the reply
         trackUploads(files);
-        const data = new FormData();
-        files.forEach(file => data.append('filesToUpload', file, file.name));
-        let sent = false;
-        try {
-            const res = await fetch('/upload', { method: 'POST', body: data });
-            sent = res.ok;
-        } catch (error) {
-            sent = false;
+        // the server takes up to MAX_FILES_PER_UPLOAD files per request:
+        // send bigger batches in groups, one after another
+        let sent = true;
+        for (let i = 0; i < files.length; i += MAX_FILES_PER_UPLOAD) {
+            const group = files.slice(i, i + MAX_FILES_PER_UPLOAD);
+            const data = new FormData();
+            data.append('page', PAGE_ID);   // before the files: the server reads it first
+            group.forEach(file => data.append('filesToUpload', file, file.name));
+            try {
+                const res = await fetch('/upload', { method: 'POST', body: data });
+                sent = res.ok;
+            } catch (error) {
+                sent = false;
+            }
+            if (!sent) {
+                untrackUploads(files.slice(i));     // this group and the ones not sent yet
+                break;
+            }
         }
 
         uploading = false;
@@ -554,7 +604,6 @@ function enableDropZone() {
         fileInput.value = '';
         showSelection('');
         if (!sent) {
-            untrackUploads(files);
             showStatus('Upload failed — check the connection to the Pi and try again', 'info');
         }
     }
