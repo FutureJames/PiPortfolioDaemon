@@ -5,7 +5,7 @@
 Connect a Raspberry Pi to the Portfolio's Parallel Interface, then browse, download and upload files from any browser on your network — desktop or phone.
 
 <p align="center">
-  <img src="images/screenshot-desktop.png" width="800" alt="The PiPortfolioDaemon web interface: Portfolio files on the left, activity log on the right" />
+  <img src="images/screenshot-desktop.png" width="800" alt="The PiPortfolioDaemon web interface: the A:\ memory card on the left, with CARDTEST.TXT part-way through downloading (23.2 KB of 57.6 KB), and the activity log on the right" />
 </p>
 
 | | |
@@ -48,7 +48,7 @@ Without these, a Portfolio is mostly a pretty plastic brick. PiPortfolioDaemon r
 ## Features
 
 - **Browse both drives** — switch between `A:\` (memory card) and `C:\` (RAM disk), open folders by name and go back up with `..`
-- **Download** a file with one click
+- **Download** a file with one click, or every file in a folder as one `.zip`
 - **Upload** several files at once by dropping them onto the page (they're sent straight away), with **Choose files**, or by copying them into the Pi's `upload/` folder (for example over a SAMBA share)
 - **Activity log** of uploads, downloads and folder changes, shared by everyone using the page
 - **Built-in help** — the **?** button explains each part of the page
@@ -59,13 +59,13 @@ Without these, a Portfolio is mostly a pretty plastic brick. PiPortfolioDaemon r
 ## Screenshots
 
 <p align="center">
-  <img src="images/screenshot-dark.png" width="560" alt="The web interface in dark mode" />
+  <img src="images/screenshot-dark.png" width="560" alt="The web interface in dark mode: the C:\ RAM disk, with the download-all button filling as the folder downloads" />
   &nbsp;
-  <img src="images/screenshot-mobile.png" width="220" alt="The web interface on a phone" />
+  <img src="images/screenshot-mobile.png" width="220" alt="The web interface on a phone, part-way through downloading a file from the memory card" />
 </p>
 
 <p align="center">
-  <img src="images/screenshot-help.png" width="560" alt="The built-in help panel" />
+  <img src="images/screenshot-help.png" width="560" alt="The built-in help panel, open at its Downloading and Uploading sections" />
 </p>
 
 ---
