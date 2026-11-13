@@ -209,6 +209,18 @@ const sendToActivityLog = (message) => {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError };
+/**
+ * Tells the pages that one uploaded file has finished, for the upload
+ * progress bar (the activity log gets its own human-readable line).
+ * @param {string} file - the file name
+ * @param {boolean} ok - whether it reached the Portfolio
+ */
+const sendUploadResult = (file, ok) => {
+    const message = JSON.stringify({ command: 'upload_result', file, ok });
+    clients.forEach(client => client.send(message));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError, sendUploadResult };
 ///////////////////////////////////////////////////////////////////////////////
   

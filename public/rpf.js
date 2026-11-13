@@ -188,6 +188,9 @@ function connectWebSocket() {
                 case 'dir':
                     populateFileList(msg);
                     break;
+                case 'upload_result':
+                    handleUploadResult(msg);
+                    break;
                 case 'pofo_error':
                     setListLoading(false);  // the listing failed; none is coming
                     showStatus('No connection to the Atari Portfolio — is it in server mode?', 'info');
@@ -399,10 +402,92 @@ function sendFolder(folder) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// Upload progress bar: counts the files of the current batch as the server
+// reports each one reaching the Portfolio (or failing). Not a byte-level
+// progress bar: rpfolio doesn't report that.
+const uploadProgress = {
+    total: 0,
+    done: 0,
+    failed: 0,
+    pending: new Map(),     // file name -> how many of that name are still due
+    hideTimer: null,
+};
+
+function renderUploadProgress() {
+    const p = uploadProgress;
+    const box = document.getElementById('upload_progress');
+    const fill = document.getElementById('progress_fill');
+    const text = document.getElementById('progress_text');
+    const track = box.querySelector('.progress-track');
+    box.classList.toggle('is-active', p.total > 0);
+    box.classList.toggle('has-failures', p.failed > 0);
+    fill.style.width = p.total ? `${(p.done / p.total) * 100}%` : '0%';
+    track.setAttribute('aria-valuemax', String(p.total));
+    track.setAttribute('aria-valuenow', String(p.done));
+    if (p.total === 0) {
+        text.innerHTML = '&nbsp;';
+    } else if (p.done < p.total) {
+        text.textContent = `Sending to the Portfolio: ${p.done} of ${p.total}` + (p.failed ? ` (${p.failed} failed)` : '');
+    } else {
+        const sent = p.total - p.failed;
+        text.textContent = p.failed ? `${sent} of ${p.total} sent, ${p.failed} failed — see Activity` : `${sent} of ${p.total} sent`;
+    }
+}
+
+// files the page has just handed to the server: wait for their results
+function trackUploads(files) {
+    const p = uploadProgress;
+    clearTimeout(p.hideTimer);
+    if (p.total > 0 && p.done === p.total) {
+        // the previous batch had finished: start counting afresh
+        Object.assign(p, { total: 0, done: 0, failed: 0 });
+        p.pending.clear();
+    }
+    files.forEach(file => p.pending.set(file.name, (p.pending.get(file.name) || 0) + 1));
+    p.total += files.length;
+    renderUploadProgress();
+}
+
+// the server didn't take the files after all: stop waiting for them
+function untrackUploads(files) {
+    const p = uploadProgress;
+    files.forEach(file => {
+        const left = (p.pending.get(file.name) || 0) - 1;
+        if (left > 0) p.pending.set(file.name, left); else p.pending.delete(file.name);
+    });
+    p.total = Math.max(0, p.total - files.length);
+    renderUploadProgress();
+    finishUploadsIfDone();
+}
+
+// one file finished on the server (ignores uploads from other pages or the shared folder)
+function handleUploadResult({ file, ok }) {
+    const p = uploadProgress;
+    const left = p.pending.get(file) || 0;
+    if (!left) return;
+    if (left > 1) p.pending.set(file, left - 1); else p.pending.delete(file);
+    p.done += 1;
+    if (!ok) p.failed += 1;
+    renderUploadProgress();
+    finishUploadsIfDone();
+}
+
+function finishUploadsIfDone() {
+    const p = uploadProgress;
+    if (p.done < p.total) return;
+    clearTimeout(p.hideTimer);
+    // leave the summary up for a moment, then clear the bar
+    p.hideTimer = setTimeout(() => {
+        Object.assign(p, { total: 0, done: 0, failed: 0 });
+        p.pending.clear();
+        renderUploadProgress();
+    }, p.failed ? 8000 : 4000);
+}
+
 // Upload box: files dropped on it are sent straight away; Choose files +
 // Upload does the same for touch screens and keyboards. Several files can
 // be sent at once. Uploads go in the background (no page reload); the
-// activity log then shows each file reaching the Portfolio.
+// progress bar and the activity log then show each file reaching the Portfolio.
 function enableDropZone() {
     const dropZone = document.getElementById('drop_zone');
     const form = dropZone.querySelector('form');
@@ -416,7 +501,6 @@ function enableDropZone() {
 
     let selected = [];          // files chosen with Choose files, waiting for Upload
     let uploading = false;
-    let messageTimer = null;
 
     // keeps the files that can be sent; says which ones are skipped and why
     function sendable(files) {
@@ -436,7 +520,6 @@ function enableDropZone() {
     }
 
     function showSelection(text) {
-        clearTimeout(messageTimer);
         fileName.textContent = text;
         submitButton.disabled = uploading || selected.length === 0;
     }
@@ -452,6 +535,8 @@ function enableDropZone() {
         hint.textContent = `Uploading ${files.length === 1 ? files[0].name : files.length + ' files'}…`;
         showSelection('');
 
+        // start counting before sending: results can arrive before the reply
+        trackUploads(files);
         const data = new FormData();
         files.forEach(file => data.append('filesToUpload', file, file.name));
         let sent = false;
@@ -467,11 +552,9 @@ function enableDropZone() {
         hint.textContent = hintText;
         selected = [];
         fileInput.value = '';
-        if (sent) {
-            showSelection(`Sent ${files.length === 1 ? files[0].name : files.length + ' files'} — see Activity`);
-            messageTimer = setTimeout(() => showSelection(''), 4000);
-        } else {
-            showSelection('');
+        showSelection('');
+        if (!sent) {
+            untrackUploads(files);
             showStatus('Upload failed — check the connection to the Pi and try again', 'info');
         }
     }

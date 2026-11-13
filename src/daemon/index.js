@@ -4,7 +4,7 @@ const fs = require('fs');
 const { runPortfolioCommand } = require('../utils');
 
 const config = require('../config');
-const { sendToWebsite, sendToActivityLog, sendDirList } = require('../websockets');
+const { sendToActivityLog, sendDirList, sendUploadResult } = require('../websockets');
 
 /**
  * Sets up a daemon to watch for added files in the shared folder and
@@ -31,6 +31,7 @@ function setupDaemon() {
             console.log(`- uploading ${fileName} to Portfolio \u{274c} ${result.reason}${cleanup}`);
             sendToActivityLog(`\u{274c} ${result.reason}\n`);
         }
+        sendUploadResult(fileName, result.ok);
         // (no terminal beep: the server runs as a service, and the bell
         // character hid the next log line in the system journal)
         sendDirList();

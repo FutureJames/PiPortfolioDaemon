@@ -552,6 +552,48 @@ input[type="submit"]:disabled {
     display: none;
 }
 
+/* Upload progress: its space is always reserved, so the box doesn't jump
+   when a batch starts; the bar and text only show while there is one */
+.upload-progress {
+    margin-top: 12px;
+    visibility: hidden;
+}
+
+.upload-progress.is-active {
+    visibility: visible;
+}
+
+.progress-track {
+    height: 6px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    width: 0%;
+    height: 100%;
+    background: var(--button-bg);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.upload-progress.has-failures .progress-text {
+    color: #d64545;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .progress-fill {
+        transition: none;
+    }
+}
+
 /* ------------------------------------------------------------------------- */
 /* Activity log                                                              */
 /* ------------------------------------------------------------------------- */
