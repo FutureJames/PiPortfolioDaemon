@@ -20,11 +20,15 @@ function setupDaemon() {
         sendToActivityLog(`\u{2b06}\u{fe0f} ${fileName} `);
 
         const result = transferFile(filePath);
+        // only claim the file is gone if deleting it actually worked
+        const cleanup = result.removed
+            ? (result.ok ? '' : '; removed from the Pi')
+            : `; could not be removed from the Pi (${result.removeError}) and may be sent again on the next start`;
         if (result.ok) {
-            console.log(`- uploading ${fileName} to Portfolio \u{2705}`);
+            console.log(`- uploading ${fileName} to Portfolio \u{2705}${cleanup}`);
             sendToActivityLog(`\u{2705}\n`);
         } else {
-            console.log(`- uploading ${fileName} to Portfolio \u{274c} ${result.reason}; removed from the Pi`);
+            console.log(`- uploading ${fileName} to Portfolio \u{274c} ${result.reason}${cleanup}`);
             sendToActivityLog(`\u{274c} ${result.reason}\n`);
         }
         process.stdout.write(config.BEEP);
@@ -59,11 +63,12 @@ function failureReason(error) {
  * failed, so the user can simply upload it again.
  *
  * @param {string} filePath - The file path to transfer.
- * @returns {{ok: boolean, reason?: string}} - whether it worked, and why not
+ * @returns {{ok: boolean, reason?: string, removed: boolean, removeError?: string}}
+ *   whether the transfer worked (and why not), and whether the file was removed
  */
 const transferFile = (filePath) => {
     if (!fs.existsSync(filePath)) {
-        return { ok: false, reason: '(file no longer exists)' };
+        return { ok: false, reason: '(file no longer exists)', removed: true };
     }
     let result = { ok: true };
     try {
@@ -75,8 +80,10 @@ const transferFile = (filePath) => {
     }
     try {
         fs.unlinkSync(filePath);
+        result.removed = true;
     } catch (error) {
-        console.error(`- could not remove ${filePath}: ${error.message}`);
+        result.removed = false;
+        result.removeError = error.code || error.message;
     }
     return result;
 }
