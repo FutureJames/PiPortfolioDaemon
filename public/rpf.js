@@ -179,6 +179,10 @@ function connectWebSocket() {
                     setLog(msg.data);
                     break;
                 case 'set_folder':
+                    // a new folder is about to be listed (also when the server
+                    // moves up from a missing folder): drop the old list and
+                    // its "not found" state so neither carries over
+                    startListLoading();
                     getFolder(msg.folder);
                     break;
                 case 'dir':
