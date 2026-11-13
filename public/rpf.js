@@ -119,6 +119,7 @@ function replaceDeadSocket() {
     clearPendingPing();
     const old = ws;
     ws = null;              // from here on the old socket's events are ignored
+    abandonUploads();
     try { if (old) old.close(); } catch (e) { /* already closed */ }
     showStatus('Connection to the server lost — reconnecting…');
     reconnectNow();
@@ -157,6 +158,7 @@ function connectWebSocket() {
         if (ws !== socket) return;      // an older socket; already replaced
         ws = null;
         clearPendingPing();
+        abandonUploads();
         setListLoading(false);          // no listing is coming on this socket
         showStatus(wasOpen ? 'Connection to the server lost — reconnecting…'
                            : 'Can’t reach the server — retrying…');
@@ -187,6 +189,9 @@ function connectWebSocket() {
                     break;
                 case 'dir':
                     populateFileList(msg);
+                    break;
+                case 'upload_result':
+                    handleUploadResult(msg);
                     break;
                 case 'pofo_error':
                     setListLoading(false);  // the listing failed; none is coming
@@ -399,49 +404,253 @@ function sendFolder(folder) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// Upload progress bar: counts the files of the current batch as the server
+// reports each one reaching the Portfolio (or failing). Not a byte-level
+// progress bar: rpfolio doesn't report that.
+const uploadProgress = {
+    total: 0,
+    done: 0,
+    failed: 0,
+    lost: false,            // the connection dropped before every result came
+    pending: new Map(),     // file name -> how many of that name are still due
+    hideTimer: null,
+};
+
+// sent with each upload; the server tags results with it so this page only
+// counts its own files (not crypto.randomUUID: that needs https)
+const PAGE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+function renderUploadProgress() {
+    const p = uploadProgress;
+    const box = document.getElementById('upload_progress');
+    const fill = document.getElementById('progress_fill');
+    const text = document.getElementById('progress_text');
+    const track = box.querySelector('.progress-track');
+    box.classList.toggle('is-active', p.total > 0);
+    box.classList.toggle('has-failures', p.failed > 0 || p.lost);
+    fill.style.width = p.total ? `${(p.done / p.total) * 100}%` : '0%';
+    track.setAttribute('aria-valuemax', String(p.total));
+    track.setAttribute('aria-valuenow', String(p.done));
+    if (p.total === 0) {
+        text.innerHTML = '&nbsp;';
+    } else if (p.lost) {
+        text.textContent = `Connection lost after ${p.done} of ${p.total} — see Activity for the rest`;
+    } else if (p.done < p.total) {
+        text.textContent = `Sending to the Portfolio: ${p.done} of ${p.total}` + (p.failed ? ` (${p.failed} failed)` : '');
+    } else {
+        const sent = p.total - p.failed;
+        text.textContent = p.failed ? `${sent} of ${p.total} sent, ${p.failed} failed — see Activity` : `${sent} of ${p.total} sent`;
+    }
+}
+
+// files the page has just handed to the server: wait for their results
+function trackUploads(files) {
+    const p = uploadProgress;
+    clearTimeout(p.hideTimer);
+    if (p.total > 0 && (p.done === p.total || p.lost)) {
+        // the previous batch had finished (or was given up): start counting afresh
+        Object.assign(p, { total: 0, done: 0, failed: 0, lost: false });
+        p.pending.clear();
+    }
+    files.forEach(file => p.pending.set(file.name, (p.pending.get(file.name) || 0) + 1));
+    p.total += files.length;
+    renderUploadProgress();
+}
+
+// the server didn't take the files after all: stop waiting for them
+function untrackUploads(files) {
+    const p = uploadProgress;
+    if (p.lost) return;     // already given up on this batch
+    files.forEach(file => {
+        const left = (p.pending.get(file.name) || 0) - 1;
+        if (left > 0) p.pending.set(file.name, left); else p.pending.delete(file.name);
+    });
+    p.total = Math.max(0, p.total - files.length);
+    renderUploadProgress();
+    finishUploadsIfDone();
+}
+
+// one file finished on the server (ignores uploads from other pages or the shared folder)
+function handleUploadResult({ file, ok, owner }) {
+    const p = uploadProgress;
+    if (owner !== PAGE_ID || p.lost) return;
+    const left = p.pending.get(file) || 0;
+    if (!left) return;
+    if (left > 1) p.pending.set(file, left - 1); else p.pending.delete(file);
+    p.done += 1;
+    if (!ok) p.failed += 1;
+    renderUploadProgress();
+    finishUploadsIfDone();
+}
+
+function finishUploadsIfDone() {
+    const p = uploadProgress;
+    if (p.done < p.total && !p.lost) return;
+    clearTimeout(p.hideTimer);
+    // leave the summary up for a moment, then clear the bar
+    p.hideTimer = setTimeout(() => {
+        Object.assign(p, { total: 0, done: 0, failed: 0, lost: false });
+        p.pending.clear();
+        renderUploadProgress();
+    }, p.failed || p.lost ? 8000 : 4000);
+}
+
+// The connection dropped: results sent meanwhile are lost and aren't replayed,
+// so stop waiting for them. The activity log, reloaded on reconnect, has them.
+function abandonUploads() {
+    const p = uploadProgress;
+    if (p.total === 0 || p.done >= p.total || p.lost) return;
+    p.lost = true;
+    p.pending.clear();
+    renderUploadProgress();
+    finishUploadsIfDone();
+}
+
+// Upload box: files dropped on it are sent straight away; Choose files +
+// Upload does the same for touch screens and keyboards. Several files can
+// be sent at once. Uploads go in the background (no page reload); the
+// progress bar and the activity log then show each file reaching the Portfolio.
 function enableDropZone() {
-    let dropZone = document.getElementById('drop_zone');
-    let fileInput = document.getElementById('filesToUpload');
-    let maxSizeInMB = 2; // Maximum size allowed in MB
-    let maxSize = maxSizeInMB * 1024 * 1024; // Convert size to bytes
+    const dropZone = document.getElementById('drop_zone');
+    const form = dropZone.querySelector('form');
+    const fileInput = document.getElementById('filesToUpload');
+    const submitButton = document.getElementById('file_submit');
+    const fileName = document.getElementById('file_name');
+    const hint = document.getElementById('drop_hint');
+    const hintText = hint.textContent;
+    const maxSizeInMB = 2;
+    const MAX_FILES_PER_UPLOAD = 20;    // matches the server's limit per request
+    const maxSize = maxSizeInMB * 1024 * 1024;
 
-    dropZone.ondragover = dropZone.ondragenter = function(evt) {
-        evt.preventDefault();
-        this.classList.add('over'); 
-    };
+    let selected = [];          // files chosen with Choose files, waiting for Upload
+    let uploading = false;
 
-    let submitButton = document.getElementById('file_submit');
-    let fileName = document.getElementById('file_name');
-
-    // shows the chosen file and enables Upload only for a valid file
-    function updateSelection() {
-        const file = fileInput.files[0];
-        if (file && file.size > maxSize) {
-            alert('File size should not exceed ' + maxSizeInMB + ' MB');
-            fileInput.value = '';
+    // keeps the files that can be sent; says which ones are skipped and why
+    function sendable(files) {
+        const ok = [];
+        const tooBig = [];
+        const repeated = new Set();
+        const names = new Set();
+        for (const file of files) {
+            if (file.size > maxSize) { tooBig.push(file); continue; }
+            // one file per name: same-named files (from different folders)
+            // would overwrite each other on the Pi and the Portfolio anyway
+            if (names.has(file.name)) { repeated.add(file.name); continue; }
+            names.add(file.name);
+            ok.push(file);
         }
-        const chosen = fileInput.files[0];
-        fileName.textContent = chosen ? chosen.name : '';
-        submitButton.disabled = !chosen;
+        const notes = [];
+        if (tooBig.length) {
+            const list = tooBig.map(f => f.name).join(', ');
+            notes.push(`${list} ${tooBig.length === 1 ? 'is' : 'are'} over ${maxSizeInMB} MB and won’t be sent`);
+        }
+        if (repeated.size) {
+            notes.push(`only one file named ${[...repeated].join(', ')} will be sent`);
+        }
+        if (notes.length) {
+            const text = notes.join('; ');
+            showStatus(text.charAt(0).toUpperCase() + text.slice(1), 'info');
+        }
+        return ok;
     }
 
-    dropZone.ondrop = function(evt) {
-        // always stop the browser from opening the dropped file
-        evt.preventDefault();
-        this.classList.remove('over');
-        if (!evt.dataTransfer.files.length) return;
-        fileInput.files = evt.dataTransfer.files;
-        updateSelection();
-    };
+    function describe(files) {
+        if (files.length === 1) return files[0].name;
+        return `${files.length} files: ${files.map(f => f.name).join(', ')}`;
+    }
 
-    dropZone.ondragleave = function(evt) {
-        if (!this.contains(evt.relatedTarget)) {
-            this.classList.remove('over');
+    function showSelection(text) {
+        fileName.textContent = text;
+        submitButton.disabled = uploading || selected.length === 0;
+    }
+
+    async function uploadFiles(files) {
+        if (files.length === 0) return;
+        if (uploading) {
+            showStatus('Please wait for the current upload to finish', 'info');
+            return;
         }
-    };
+        uploading = true;
+        dropZone.classList.add('is-uploading');
+        hint.textContent = `Uploading ${files.length === 1 ? files[0].name : files.length + ' files'}…`;
+        showSelection('');
 
-    fileInput.onchange = updateSelection;
-    updateSelection();
+        // start counting before sending: results can arrive before the reply
+        trackUploads(files);
+        // the server takes up to MAX_FILES_PER_UPLOAD files per request:
+        // send bigger batches in groups, one after another
+        let sent = true;
+        for (let i = 0; i < files.length; i += MAX_FILES_PER_UPLOAD) {
+            const group = files.slice(i, i + MAX_FILES_PER_UPLOAD);
+            const data = new FormData();
+            data.append('page', PAGE_ID);   // before the files: the server reads it first
+            group.forEach(file => data.append('filesToUpload', file, file.name));
+            try {
+                const res = await fetch('/upload', { method: 'POST', body: data });
+                sent = res.ok;
+            } catch (error) {
+                sent = false;
+            }
+            if (!sent) {
+                untrackUploads(files.slice(i));     // this group and the ones not sent yet
+                break;
+            }
+        }
+
+        uploading = false;
+        dropZone.classList.remove('is-uploading');
+        hint.textContent = hintText;
+        selected = [];
+        fileInput.value = '';
+        showSelection('');
+        if (!sent) {
+            showStatus('Upload failed — check the connection to the Pi and try again', 'info');
+        }
+    }
+
+    // Choose files: show what was picked and enable Upload
+    fileInput.addEventListener('change', () => {
+        selected = sendable([...fileInput.files]);
+        showSelection(selected.length ? describe(selected) : '');
+    });
+
+    // Upload button (or Enter): send the chosen files without reloading
+    form.addEventListener('submit', (evt) => {
+        evt.preventDefault();
+        uploadFiles(selected);
+    });
+
+    dropZone.addEventListener('dragenter', (evt) => { evt.preventDefault(); dropZone.classList.add('over'); });
+    dropZone.addEventListener('dragover', (evt) => { evt.preventDefault(); dropZone.classList.add('over'); });
+    dropZone.addEventListener('dragleave', (evt) => {
+        if (!dropZone.contains(evt.relatedTarget)) dropZone.classList.remove('over');
+    });
+
+    // Drop: send the files straight away
+    dropZone.addEventListener('drop', (evt) => {
+        // always stop the browser from opening the dropped files
+        evt.preventDefault();
+        dropZone.classList.remove('over');
+        // take files from the drop items so folders can be told apart and skipped
+        const items = [...(evt.dataTransfer.items || [])];
+        let files = [];
+        let folders = 0;
+        if (items.length) {
+            for (const item of items) {
+                if (item.kind !== 'file') continue;
+                const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+                if (entry && entry.isDirectory) { folders++; continue; }
+                const file = item.getAsFile();
+                if (file) files.push(file);
+            }
+        } else {
+            files = [...evt.dataTransfer.files];
+        }
+        if (folders) showStatus('Folders can’t be uploaded — drop the files inside them instead', 'info');
+        uploadFiles(sendable(files));
+    });
+
+    showSelection('');
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -74,9 +74,10 @@ const downloadFile = (req, res) => {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// The files are already saved to the upload folder by multer; the daemon
+// picks each one up from there and sends it to the Portfolio.
 const uploadFile = (req, res) => {
-  const file = req.file;
-  if (!file) {
+  if (!req.files || req.files.length === 0) {
     return res.status(400).send('No file uploaded.');
   }
   res.redirect('/');

@@ -49,7 +49,7 @@ Without these, a Portfolio is mostly a pretty plastic brick. PiPortfolioDaemon r
 
 - **Browse both drives** — switch between `A:\` (memory card) and `C:\` (RAM disk), open folders by name and go back up with `..`
 - **Download** a file with one click
-- **Upload** by dropping a file onto the page, or by copying it into the Pi's `upload/` folder (for example over a SAMBA share)
+- **Upload** several files at once by dropping them onto the page (they're sent straight away), with **Choose files**, or by copying them into the Pi's `upload/` folder (for example over a SAMBA share)
 - **Activity log** of uploads, downloads and folder changes, shared by everyone using the page
 - **Built-in help** — the **?** button explains each part of the page
 - **Recovers by itself** — reconnects after the Pi restarts or the network drops, and reports when the Portfolio isn't answering
@@ -220,7 +220,7 @@ Click the **?** button on the page for the same instructions.
 
 **Downloading** — click a file name.
 
-**Uploading** — drop a file onto the upload box, or use **Choose file**, then **Upload**. It goes to the folder shown above the list and replaces any file with the same name. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again.
+**Uploading** — drop one or more files onto the upload box to send them straight away, or use **Choose files**, then **Upload**. They go to the folder shown above the list and replace any files with the same names. A bar under the buttons counts the files as each one reaches the Portfolio. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again.
 
 **Activity** — lists uploads (⬆️), downloads (⬇️) and folder changes (📁), with ✅ or ❌ for each one (❌ with the reason, such as a folder that wasn't found). It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
 

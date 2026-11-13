@@ -62,13 +62,23 @@
                 <div id="upload_form">
                     <div id="drop_zone">
                         <form action="/upload" method="post" enctype="multipart/form-data">
-                            <p class="drop-hint">Drop a file here to send it to the Portfolio</p>
+                            <p class="drop-hint" id="drop_hint">Drop files here to send them to the Portfolio</p>
+                            <p class="drop-or">OR</p>
                             <div class="upload-actions">
-                                <label for="filesToUpload" class="button button-secondary">Choose file</label>
-                                <input type="file" name="filesToUpload" id="filesToUpload" class="visually-hidden">
+                                <label for="filesToUpload" class="button button-secondary">Choose files</label>
+                                <input type="file" name="filesToUpload" id="filesToUpload" class="visually-hidden" multiple>
                                 <input type="submit" value="Upload" id="file_submit" name="submit" disabled>
                             </div>
                             <div id="file_name" aria-live="polite"></div>
+                            <!-- counts files as the Portfolio reports each one done -->
+                            <div class="upload-progress" id="upload_progress" aria-live="polite">
+                                <div class="progress-track"
+                                     role="progressbar" aria-label="Files sent to the Portfolio"
+                                     aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+                                    <div class="progress-fill" id="progress_fill"></div>
+                                </div>
+                                <p class="progress-text" id="progress_text">&nbsp;</p>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -120,9 +130,10 @@
             <p>Click a file name to download it from the Portfolio.</p>
 
             <h3>Uploading</h3>
-            <p>Drop a file onto the upload box, or use <strong>Choose file</strong>, then
-               <strong>Upload</strong>. It is sent to the folder shown above the list and
-               replaces any file with the same name. Files can be up to 2&nbsp;MB. The Portfolio
+            <p>Drop one or more files onto the upload box to send them straight away, or use
+               <strong>Choose files</strong>, then <strong>Upload</strong>. They are sent to the
+               folder shown above the list and replace any files with the same names. A bar under
+               the buttons counts the files as each one reaches the Portfolio. Files can be up to 2&nbsp;MB. The Portfolio
                uses short DOS names (8 characters plus a 3-character extension, like
                <code>NOTES.TXT</code>), so longer names are shortened. If an upload fails, the
                activity log shows ❌ with the reason and the file is discarded; just upload

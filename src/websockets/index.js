@@ -209,6 +209,53 @@ const sendToActivityLog = (message) => {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError };
+/**
+ * Tells the pages that one uploaded file has finished, for the upload
+ * progress bar (the activity log gets its own human-readable line).
+ * @param {string} file - the file name
+ * @param {boolean} ok - whether it reached the Portfolio
+ */
+// file name -> ids of the pages that uploaded files of that name, oldest first
+const uploadOwners = new Map();
+
+/**
+ * Notes which page uploaded a file, so its result can be matched to that page.
+ * @param {string} file - the file name as saved in the shared folder
+ * @param {string} [page] - the uploading page's id
+ */
+const expectUpload = (file, page) => {
+    const owner = typeof page === 'string' ? page.slice(0, 64) : null;
+    const queue = uploadOwners.get(file) || [];
+    queue.push(owner);
+    uploadOwners.set(file, queue);
+}
+
+/**
+ * Undoes expectUpload for a file whose upload failed before it was saved.
+ */
+const forgetUpload = (file, page) => {
+    const owner = typeof page === 'string' ? page.slice(0, 64) : null;
+    const queue = uploadOwners.get(file);
+    if (!queue) return;
+    const i = queue.lastIndexOf(owner);
+    if (i >= 0) queue.splice(i, 1);
+    if (queue.length === 0) uploadOwners.delete(file);
+}
+
+/**
+ * Tells the pages that a file reached the Portfolio (or failed), with the id of
+ * the page that uploaded it; other pages ignore it. Files put in the shared
+ * folder some other way have no owner.
+ */
+const sendUploadResult = (file, ok) => {
+    const queue = uploadOwners.get(file);
+    const owner = queue && queue.length ? queue.shift() : null;
+    if (queue && queue.length === 0) uploadOwners.delete(file);
+    const message = JSON.stringify({ command: 'upload_result', file, ok, owner });
+    clients.forEach(client => client.send(message));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError, sendUploadResult, expectUpload, forgetUpload };
 ///////////////////////////////////////////////////////////////////////////////
   
