@@ -54,14 +54,19 @@ function logFolder(status) {
 }
 
 // After a listing: if the folder doesn't exist, go up a level (logging
-// each step) until one does. This stops at the drive root: C:\ always
-// exists, and A:\ without its card reports 'nocard' rather than 'missing'.
+// each step) until one does. If that ends at A:\ with no card in, switch
+// to C:\, the built-in RAM disk, which always exists.
 function leaveMissingFolder(status) {
     while (status === 'missing' && config.portfolioPath.length > 3) {
         console.log(`- folder not found, going up: ${config.portfolioPath}`);
         normalizePortfolioPath(parentFolder(config.portfolioPath));
         status = sendDirList();
         logFolder(status);
+    }
+    if (status === 'nocard') {
+        console.log('- no card in A:, switching to c:\\');
+        normalizePortfolioPath('c:\\');
+        logFolder(sendDirList());
     }
 }
 
@@ -98,10 +103,10 @@ const setupWebSockets = (server) => {
                     normalizePortfolioPath(config.portfolioPath);
                     {
                         // the current folder may have disappeared since it was
-                        // opened (e.g. the RAM disk was wiped): if so, say so
-                        // and go up to one that exists
+                        // opened (e.g. the RAM disk was wiped, or the A: card
+                        // was taken out): if so, say so and move to one that exists
                         const status = sendDirList();
-                        if (status === 'missing') {
+                        if (status === 'missing' || status === 'nocard') {
                             logFolder(status);
                             leaveMissingFolder(status);
                         }
