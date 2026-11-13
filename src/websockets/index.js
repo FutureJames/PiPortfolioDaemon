@@ -4,7 +4,7 @@ const WebSocket = require('ws');
 const path = require('path');
 
 const config = require('../config');
-const { getDirListFromPortfolio } = require('../utils');
+const { getDirListFromPortfolio, folderExists } = require('../utils');
 
 let clients = [];
 
@@ -108,6 +108,10 @@ function sendDirList() {
         command: 'dir',
         files: files
     };
+    // an empty listing may mean the folder doesn't exist; only check then
+    if (files.length === 0 && folderExists() === false) {
+        newMessage.missing = true;
+    }
     clients.forEach(client => client.send(JSON.stringify(newMessage)));
 }
 

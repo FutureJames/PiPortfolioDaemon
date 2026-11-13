@@ -30,25 +30,45 @@ const runPortfolioCommand = (template, values, options = {}) => {
  * @returns {Array<string>} An array of strings representing the directory content.
  */
 
-// FYI: rpfolio does not return an error if a folder does not exists...
+// the names in rpfolio's listing output (skips its banner lines)
+const parseListing = (output) => output
+    .toString()
+    .split('\n')
+    .filter(Boolean)
+    .slice(2)
+    // rpfolio prints "No files." for an empty drive; that is not a file
+    .filter(name => name.trim() !== 'No files.');
+
+// FYI: rpfolio does not return an error if a folder does not exist;
+// see folderExists() to tell an empty folder from a missing one
 const getDirListFromPortfolio = () => {
     try {
-      const res = runPortfolioCommand(config.listCommand, { drive: config.portfolioPath }, {
+      return parseListing(runPortfolioCommand(config.listCommand, { drive: config.portfolioPath }, {
         timeout: config.portfolioTimeout
-      })
-        .toString()
-        .split('\n')
-        .filter(Boolean)
-        .slice(2)
-        // rpfolio prints "No files." for an empty drive; that is not a file
-        .filter(name => name.trim() !== 'No files.')
-        .sort();
-      return res;
+      })).sort();
     } catch (error) {
       console.error('- Error getting dir list');
       return false;
     }
   };
+
+/**
+ * Whether the current folder exists on the Portfolio. Listings never show
+ * folders, and an empty folder lists the same as a missing one, but every
+ * existing DOS folder contains the NUL device: listing FOLDER\NUL finds it
+ * only if the folder is there.
+ * @returns {boolean|null} true / false, or null if the Portfolio didn't answer
+ */
+const folderExists = () => {
+    if (config.portfolioPath.length <= 3) return true;   // a drive root, e.g. 'c:\'
+    try {
+      return parseListing(runPortfolioCommand(config.existsCommand, { drive: config.portfolioPath }, {
+        timeout: config.portfolioTimeout
+      })).some(name => name.trim().toUpperCase() === 'NUL');
+    } catch (error) {
+      return null;
+    }
+};
   
   ///////////////////////////////////////////////////////////////////////////////
   /**
@@ -70,6 +90,6 @@ const getDirListFromPortfolio = () => {
   };
   
 ///////////////////////////////////////////////////////////////////////////////
-module.exports = { runPortfolioCommand, getDirListFromPortfolio, receiveFileFromPortfolio };
+module.exports = { runPortfolioCommand, getDirListFromPortfolio, folderExists, receiveFileFromPortfolio };
 ///////////////////////////////////////////////////////////////////////////////
   

@@ -404,6 +404,11 @@ input[type="submit"]:disabled {
     font-size: 0.9rem;
 }
 
+/* The folder typed in the directory field doesn't exist on the Portfolio */
+#dir_container.is-missing #file_list:empty::before {
+    content: 'Folder not found';
+}
+
 /* While a listing is loading: no "No files", show the spinner instead */
 #dir_container.is-loading #file_list:empty::before {
     content: none;

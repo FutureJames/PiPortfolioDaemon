@@ -333,13 +333,16 @@ function setListLoading(loading) {
 // empties the list and shows the spinner while a new listing is fetched
 function startListLoading() {
     clearFileList();
+    document.getElementById('dir_container').classList.remove('is-missing');
     setListLoading(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// lists all the files for the folder
-function populateFileList({ files = [] } = {}) {
+// lists all the files for the folder; `missing` means the folder doesn't
+// exist on the Portfolio (shown as "Folder not found" instead of "No files")
+function populateFileList({ files = [], missing = false } = {}) {
     setListLoading(false);
+    document.getElementById('dir_container').classList.toggle('is-missing', missing === true);
     const fileList = document.getElementById('file_list');
     fileList.innerHTML = '';
     if (files === false) return;
