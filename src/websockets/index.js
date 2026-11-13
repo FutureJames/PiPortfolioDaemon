@@ -70,8 +70,16 @@ const setupWebSockets = (server) => {
                     // Handle the 'set_folder' command here
                     console.log(`- setting Portfolio folder: ${message.folder}`);
                     normalizePortfolioPath(message.folder);
-                    sendToActivityLog(`📁 ${config.portfolioPath}\n`);
-                    sendDirList();
+                    {
+                        // log the folder change with its outcome, like uploads
+                        const status = sendDirList();
+                        const result = {
+                            ok: '\u{2705}',
+                            missing: '\u{274c} (folder not found)',
+                            error: '\u{274c} (no connection to the Portfolio)',
+                        }[status];
+                        sendToActivityLog(`📁 ${config.portfolioPath} ${result}\n`);
+                    }
                     break;
                 case 'clear_log':
                     activityLog = '';
@@ -95,14 +103,15 @@ const setupWebSockets = (server) => {
   
 ///////////////////////////////////////////////////////////////////////////////
 /**
- * Sends the new folder name to the HTML page.
- * @param {string} folder - The folder name to send.
+ * Sends the current folder's file list to every open page.
+ * @returns {'ok'|'missing'|'error'} listed, folder doesn't exist, or the
+ *   Portfolio didn't answer
  */
 function sendDirList() {
     const files = getDirListFromPortfolio();
     if (!files) {
         sendPortfolioError();
-        return;
+        return 'error';
     }
     const newMessage = {
         command: 'dir',
@@ -113,6 +122,7 @@ function sendDirList() {
         newMessage.missing = true;
     }
     clients.forEach(client => client.send(JSON.stringify(newMessage)));
+    return newMessage.missing ? 'missing' : 'ok';
 }
 
 ///////////////////////////////////////////////////////////////////////////////

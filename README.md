@@ -222,7 +222,7 @@ Click the **?** button on the page for the same instructions.
 
 **Uploading** — drop a file onto the upload box, or use **Choose file**, then **Upload**. It goes to the folder shown above the list and replaces any file with the same name. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again.
 
-**Activity** — lists uploads (⬆️), downloads (⬇️) and folder changes (📁), with ✅ or ❌ for each transfer. It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
+**Activity** — lists uploads (⬆️), downloads (⬇️) and folder changes (📁), with ✅ or ❌ for each one (❌ with the reason, such as a folder that wasn't found). It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
 
 **Connection** — if the page loses its connection to the Pi, a message appears at the bottom and it reconnects by itself.
 
