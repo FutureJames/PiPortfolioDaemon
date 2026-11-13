@@ -24,7 +24,7 @@ function setupDaemon() {
             console.log(`- uploading ${fileName} to Portfolio \u{2705}`);
             sendToActivityLog(`\u{2705}\n`);
         } else {
-            console.log(`- uploading ${fileName} to Portfolio \u{274c} ${result.reason}`);
+            console.log(`- uploading ${fileName} to Portfolio \u{274c} ${result.reason}; removed from the Pi`);
             sendToActivityLog(`\u{274c} ${result.reason}\n`);
         }
         process.stdout.write(config.BEEP);
@@ -52,8 +52,11 @@ function failureReason(error) {
 }
 
 /**
- * Transfers the specified file to the configured drive and removes the file
- * from the shared folder after a successful transfer.
+ * Transfers the specified file to the configured drive, then removes it from
+ * the shared folder. The file is removed whether or not the transfer worked:
+ * a failed file can't be reached from the web page, and leaving it would make
+ * it upload unexpectedly on the next server start. The activity log says it
+ * failed, so the user can simply upload it again.
  *
  * @param {string} filePath - The file path to transfer.
  * @returns {{ok: boolean, reason?: string}} - whether it worked, and why not
@@ -62,15 +65,20 @@ const transferFile = (filePath) => {
     if (!fs.existsSync(filePath)) {
         return { ok: false, reason: '(file no longer exists)' };
     }
+    let result = { ok: true };
     try {
         // keep stderr so a failure can say why
         runPortfolioCommand(config.transferCommand, { file: filePath, drive: config.portfolioPath },
             { stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (error) {
-        return { ok: false, reason: failureReason(error) };
+        result = { ok: false, reason: failureReason(error) };
     }
-    fs.unlinkSync(filePath);
-    return { ok: true };
+    try {
+        fs.unlinkSync(filePath);
+    } catch (error) {
+        console.error(`- could not remove ${filePath}: ${error.message}`);
+    }
+    return result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

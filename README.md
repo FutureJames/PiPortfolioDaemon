@@ -204,7 +204,7 @@ http://atari.local/
 
 ### Optional: share the upload folder
 
-Anything copied into `~/PiPortfolioDaemon/upload/` is sent to the Portfolio automatically and then removed. To drop files there from another computer, [share that folder over SAMBA](https://pimylifeup.com/raspberry-pi-samba/).
+Anything copied into `~/PiPortfolioDaemon/upload/` is sent to the Portfolio automatically and then removed from the Pi — also if the transfer fails, so check the activity log. To drop files there from another computer, [share that folder over SAMBA](https://pimylifeup.com/raspberry-pi-samba/).
 
 ---
 
@@ -220,7 +220,7 @@ Click the **?** button on the page for the same instructions.
 
 **Downloading** — click a file name.
 
-**Uploading** — drop a file onto the upload box, or use **Choose file**, then **Upload**. It goes to the folder shown above the list and replaces any file with the same name. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened.
+**Uploading** — drop a file onto the upload box, or use **Choose file**, then **Upload**. It goes to the folder shown above the list and replaces any file with the same name. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again.
 
 **Activity** — lists uploads (⬆️), downloads (⬇️) and folder changes (📁), with ✅ or ❌ for each transfer. It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
 
