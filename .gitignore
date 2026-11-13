@@ -12,6 +12,8 @@ platformio.ini
 # node
 node_modules/
 npm-debug.log*
+# files on their way to the Portfolio (the server creates the folder)
+upload/
 # editor swap files
 *.swp
 *.swo

@@ -1,3 +1,4 @@
+const fs = require('fs');
 const app = require('./src/app');
 const config = require('./src/config');
 
@@ -14,9 +15,9 @@ if (!doesPathExists(config.webserverFolder)) {
 if (!doesPathExists(config.homepage)) {
     throw new Error(`homepage file does not exist: ${config.homepage}`);
 }
-if (!doesPathExists(config.sharedFolder)) {
-    throw new Error(`sharedFolder does not exist: ${config.sharedFolder}`);
-}
+// the upload folder isn't in git (it only ever holds files on their way
+// to the Portfolio), so a fresh install doesn't have it yet
+fs.mkdirSync(config.sharedFolder, { recursive: true });
 if (!doesPathExists(config.tmpFolder)) {
     throw new Error(`tmpFolder does not exist: ${config.tmpFolder}`);
 }
