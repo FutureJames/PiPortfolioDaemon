@@ -118,8 +118,17 @@ function sendDirList() {
         files: files
     };
     // an empty listing may mean the folder doesn't exist; only check then
-    if (files.length === 0 && folderExists() === false) {
-        newMessage.missing = true;
+    if (files.length === 0) {
+        const exists = folderExists();
+        if (exists === null) {
+            // the Portfolio stopped answering between the two requests:
+            // report it like any other lost contact, not as "No files"
+            sendPortfolioError();
+            return 'error';
+        }
+        if (exists === false) {
+            newMessage.missing = true;
+        }
     }
     clients.forEach(client => client.send(JSON.stringify(newMessage)));
     return newMessage.missing ? 'missing' : 'ok';
