@@ -23,6 +23,7 @@ if (typeof window.WebSocket === 'undefined') {
 }
 enableDropZone();
 enableHelp();
+enableDownloadAll();
 
 ///////////////////////////////////////////////////////////////////////////////
 // Help panel: opens from the Activity header; closes with Close, Esc
@@ -325,6 +326,7 @@ function showDrive(drive) {
 function clearFileList() {
     const fileList = document.getElementById('file_list');
     fileList.innerHTML = '';
+    showDownloadAll(false);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -397,6 +399,7 @@ function populateFileList({ files = [], missing = false, nocard = false } = {}) 
     const fileList = document.getElementById('file_list');
     fileList.innerHTML = '';
     if (files === false) return;
+    showDownloadAll(files.length > 0);
     files.forEach(file => {
         const listItem = document.createElement('li');
         const link = document.createElement('a');
@@ -441,6 +444,59 @@ async function downloadFile(event) {
     } finally {
         link.classList.remove('is-downloading');
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Download all: every file in the folder being shown, as one .zip. The
+// button sits in the lower right of the file list and only shows when the
+// list has files. The page names the folder, so the server sends the one
+// the user is looking at.
+function showDownloadAll(show) {
+    const button = document.getElementById('download_all');
+    // keep a running download's button visible until it finishes
+    if (!show && button.classList.contains('is-busy')) return;
+    button.hidden = !show;
+    button.parentElement.classList.toggle('has-download-all', show);
+}
+
+function enableDownloadAll() {
+    const button = document.getElementById('download_all');
+    const label = button.getAttribute('aria-label');
+    button.addEventListener('click', async () => {
+        if (button.classList.contains('is-busy')) return;
+        const folder = currentPath;
+        button.classList.add('is-busy');
+        button.setAttribute('aria-label', 'Downloading all files…');
+        button.title = 'Downloading all files… (about 1.5 KB a second)';
+        try {
+            const res = await fetch(`/download-all?folder=${encodeURIComponent(folder)}`);
+            if (!res.ok) {
+                const text = (await res.text()).trim();
+                showStatus(text ? `Download failed: ${text}` : 'Download of all files failed',
+                    res.status === 503 ? 'error' : 'info');
+                return;
+            }
+            // the server names the .zip after the folder, e.g. GAMES.zip
+            const disposition = res.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^";]+)"?/);
+            const url = URL.createObjectURL(await res.blob());
+            const save = document.createElement('a');
+            save.href = url;
+            save.download = match ? match[1] : 'portfolio.zip';
+            document.body.appendChild(save);
+            save.click();
+            save.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (error) {
+            showStatus('Download of all files failed — check the connection to the Pi', 'info');
+        } finally {
+            button.classList.remove('is-busy');
+            button.setAttribute('aria-label', label);
+            button.title = 'Download all files in this folder (.zip)';
+            // the list may have changed meanwhile
+            showDownloadAll(document.querySelectorAll('#file_list li').length > 0);
+        }
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////

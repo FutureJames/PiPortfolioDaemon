@@ -5,7 +5,8 @@ const path = require('path');
 const fs = require('fs');
 
 const config = require('../config');
-const { receiveFileFromPortfolio } = require('../utils');
+const { receiveFileFromPortfolio, receiveAllFromPortfolio } = require('../utils');
+const { createZip } = require('../utils/zip');
 const { sendToActivityLog, sendPortfolioError, notePortfolioResult } = require('../websockets');
 
 const multer  = require('multer');
@@ -86,5 +87,52 @@ const uploadFile = (req, res) => {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-module.exports = { getHomePage, serveStaticFiles, downloadFile, uploadFile };
+///////////////////////////////////////////////////////////////////////////////
+// A Portfolio folder: drive A: or C:, then DOS names (up to 8 characters,
+// optionally a dot and up to 3 more), each followed by a backslash
+const DOS_NAME = "[A-Za-z0-9_$~!#%&'()@^{}-]{1,8}(?:\\.[A-Za-z0-9_$~!#%&'()@^{}-]{1,3})?";
+const PORTFOLIO_FOLDER = new RegExp(`^[ac]:\\\\(?:${DOS_NAME}\\\\)*$`, 'i');
+
+/**
+ * Sends every file in a Portfolio folder as one .zip, e.g. GAMES.zip, or
+ * C-drive.zip for a drive's root. The page says which folder (the one it is
+ * showing), so another page opening a folder meanwhile doesn't matter.
+ * @param {object} req - Express request object (?folder=a:\GAMES\).
+ * @param {object} res - Express response object.
+ */
+const downloadAllFiles = async (req, res) => {
+  const folder = String(req.query.folder || '');
+  if (!PORTFOLIO_FOLDER.test(folder)) {
+    return res.status(400).type('text/plain').send('Invalid folder.');
+  }
+  const parts = folder.slice(3).split('\\').filter(Boolean);
+  const zipName = parts.length ? `${parts[parts.length - 1]}.zip` : `${folder[0].toUpperCase()}-drive.zip`;
+  console.log(`- downloading all files in ${folder} from Portfolio`);
+
+  // one rpfolio command for the whole folder, in the background like any
+  // other transfer; lands in a temporary folder of its own
+  const result = await receiveAllFromPortfolio(folder);
+  if (!result.ok) {
+    const { reason, kind } = result.error;
+    console.log(`- downloading all files in ${folder} from Portfolio \u{274c} ${reason}`);
+    sendToActivityLog(`\u{2b07}\u{fe0f} ${folder} (all files) \u{274c} ${reason}\n`);
+    notePortfolioResult(result.error);
+    if (kind !== 'failed') sendPortfolioError(reason);
+    return res.status(kind === 'failed' ? 500 : 503).type('text/plain').send(`${zipName} ${reason}`);
+  }
+  notePortfolioResult(null);
+
+  let zip;
+  try {
+    zip = createZip(result.files.map(name => ({ name, data: fs.readFileSync(path.join(result.dir, name)) })));
+  } finally {
+    result.cleanup();
+  }
+  const count = `${result.files.length} file${result.files.length === 1 ? '' : 's'}`;
+  res.attachment(zipName).type('application/zip').send(zip);
+  console.log(`- downloading all files in ${folder} from Portfolio \u{2705} ${count}`);
+  sendToActivityLog(`\u{2b07}\u{fe0f} ${folder} (${count}) \u{2705}\n`);
+};
+
+module.exports = { getHomePage, serveStaticFiles, downloadFile, downloadAllFiles, uploadFile };
 ///////////////////////////////////////////////////////////////////////////////
