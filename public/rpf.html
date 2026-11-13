@@ -87,11 +87,11 @@
                                 <input type="submit" value="Upload" id="file_submit" name="submit" disabled>
                             </div>
                             <div id="file_name" aria-live="polite"></div>
-                            <!-- counts files as the Portfolio reports each one done -->
+                            <!-- follows the bytes reaching the Portfolio, as rpfolio counts them -->
                             <div class="upload-progress" id="upload_progress" aria-live="polite">
                                 <div class="progress-track"
-                                     role="progressbar" aria-label="Files sent to the Portfolio"
-                                     aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+                                     role="progressbar" aria-label="Sent to the Portfolio"
+                                     aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                                     <div class="progress-fill" id="progress_fill"></div>
                                 </div>
                                 <p class="progress-text" id="progress_text">&nbsp;</p>

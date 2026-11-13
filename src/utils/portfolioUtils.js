@@ -78,17 +78,18 @@ function failureReason(stderr, stdout, code) {
  * never interpreted as shell syntax.
  * @param {string} template - e.g. 'rpfolio -f -t <file> <drive>'
  * @param {object} values - placeholder values, e.g. { file, drive }
+ * @param {Function} [onOutput] - called with each chunk of rpfolio's output
  * @returns {Promise<string>} rpfolio's output; rejects with a PortfolioError
  */
-function runPortfolioCommand(template, values) {
+function runPortfolioCommand(template, values, onOutput) {
     const [cmd, ...args] = template
         .split(' ')
         .filter(Boolean)
         .map(part => part.replace(/<(\w+)>/g, (match, key) => (key in values ? String(values[key]) : match)));
-    return enqueue(() => runNow(cmd, args));
+    return enqueue(() => runNow(cmd, args, onOutput));
 }
 
-function runNow(cmd, args) {
+function runNow(cmd, args, onOutput) {
     return new Promise((resolve, reject) => {
         // rpfolio prints a byte counter line for every byte it moves. stdbuf
         // passes its output on in 1 KB batches (about every 30 bytes moved)
@@ -119,6 +120,7 @@ function runNow(cmd, args) {
         waitFor(config.portfolioAnswerTimeout, 'noanswer');
 
         child.stdout.on('data', (chunk) => {
+            if (onOutput) onOutput(chunk.toString());
             stdout += chunk;
             // a transfer prints about 30 bytes per byte moved; keep only the
             // start (where rpfolio reports problems like "File not found")
@@ -196,14 +198,16 @@ const folderExists = async (folder) => {
 /**
  * Receives a file from the current folder into a new temporary folder.
  * @param {string} fileName
+ * @param {Function} [onProgress] - see receivedBytesCounter
  * @returns {Promise<{ok: true, path: string, cleanup: Function} | {ok: false, error: PortfolioError}>}
  *   on success, call cleanup() once the file has been sent on
  */
-const receiveFileFromPortfolio = async (fileName) => {
+const receiveFileFromPortfolio = async (fileName, onProgress) => {
     const dir = fs.mkdtempSync(path.join(config.tmpFolder, 'pofo-'));
     const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
     try {
-        await runPortfolioCommand(config.receiveCommand, { file: fileName, drive: config.portfolioPath, dest: dir });
+        await runPortfolioCommand(config.receiveCommand, { file: fileName, drive: config.portfolioPath, dest: dir },
+            onProgress && receivedBytesCounter(onProgress));
         const filePath = path.join(dir, fileName);
         if (!fs.existsSync(filePath)) throw new PortfolioError('failed', '(file not found on the Portfolio)');
         return { ok: true, path: filePath, cleanup };
@@ -218,14 +222,16 @@ const receiveFileFromPortfolio = async (fileName) => {
  * into a new temporary folder. Folders inside it aren't included: the
  * Portfolio's listings don't contain them.
  * @param {string} folder - e.g. 'a:\\GAMES\\'
+ * @param {Function} [onProgress] - see receivedBytesCounter
  * @returns {Promise<{ok: true, dir: string, files: string[], cleanup: Function} | {ok: false, error: PortfolioError}>}
  *   on success, call cleanup() once the files have been sent on
  */
-const receiveAllFromPortfolio = async (folder) => {
+const receiveAllFromPortfolio = async (folder, onProgress) => {
     const dir = fs.mkdtempSync(path.join(config.tmpFolder, 'pofo-'));
     const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
     try {
-        await runPortfolioCommand(config.receiveCommand, { file: '*.*', drive: folder, dest: dir });
+        await runPortfolioCommand(config.receiveCommand, { file: '*.*', drive: folder, dest: dir },
+            onProgress && receivedBytesCounter(onProgress));
         const files = fs.readdirSync(dir).sort();
         if (files.length === 0) throw new PortfolioError('failed', '(no files in this folder)');
         return { ok: true, dir, files, cleanup };
@@ -240,12 +246,131 @@ const receiveAllFromPortfolio = async (folder) => {
     }
 };
 
+// rpfolio's output, line by line: a counter line ends in "\r" (it is
+// overwritten on a terminal), other lines in "\n". onLine gets each whole
+// line, onChunkEnd is called once per chunk after its lines.
+function lineReader(onLine, onChunkEnd) {
+    let carry = '';         // a line split across chunks
+    return (chunk) => {
+        const lines = (carry + chunk).split(/[\r\n]/);
+        carry = lines.pop();
+        lines.forEach(onLine);
+        onChunkEnd();
+    };
+}
+
+// While sending, rpfolio splits the file into blocks (the Portfolio says how
+// big) and counts the bytes of each block: "Sent 1 of 512 bytes.\r", "Sent 2
+// of 512 bytes.\r", ..., with a newline after a block's last byte. The
+// counter starts again for every block, so the bytes of finished blocks are
+// added up here.
+const SENT_COUNTER = /^Sent (\d+) of (\d+) bytes\.$/;
+
+/**
+ * Turns rpfolio's output while sending into a running total of bytes sent.
+ * @param {Function} onProgress - called with the bytes sent so far
+ * @returns {Function} takes each chunk of output
+ */
+function sentBytesCounter(onProgress) {
+    let finishedBlocks = 0; // bytes in blocks already sent
+    let sent = -1;          // -1: nothing new in this chunk
+    return lineReader((line) => {
+        const match = SENT_COUNTER.exec(line);
+        if (!match) return;
+        const done = Number(match[1]);
+        const blockSize = Number(match[2]);
+        if (done >= blockSize) {
+            finishedBlocks += blockSize;
+            sent = finishedBlocks;
+        } else {
+            sent = finishedBlocks + done;
+        }
+    }, () => {
+        if (sent >= 0) onProgress(sent);
+        sent = -1;
+    });
+}
+
+// While receiving, rpfolio prints for each file:
+//   Transferring file 2 of 5: NAME.TXT
+//   File size: 1300 bytes.                         (patched rpfolio only)
+//   Transmission consists of 3 blocks of payload.  (more than one block only)
+//   Received 1 of 512 bytes\r ... Received 512 of 512 bytes\r \n  (each block)
+// An unpatched rpfolio doesn't print the size: it is then estimated from the
+// number of blocks times the first block's size, and is exact once the last
+// block starts (for a single block, from the start). Whether rpfolio is
+// patched shows before the first counter: "File size" came first or not.
+// Estimated sizes are flagged, so the page can mark them.
+const RECEIVING_FILE = /^Transferring file (\d+)(?: of (\d+))?: (.*)$/;
+const FILE_SIZE = /^File size: (\d+) bytes\.$/;
+const BLOCK_COUNT = /^Transmission consists of (\d+) blocks/;
+const RECEIVED_COUNTER = /^Received (\d+) of (\d+) bytes$/;
+
+/**
+ * Turns rpfolio's output while receiving into progress for each file.
+ * @param {Function} onProgress - called with { file, index, count, received, size, estimated }:
+ *   the file being received, which one it is (from 1) and of how many
+ *   (null if unknown), bytes received so far, the file's size (null until
+ *   known) and whether that size is only an estimate
+ * @returns {Function} takes each chunk of output
+ */
+function receivedBytesCounter(onProgress) {
+    let current = null;
+    let changed = false;
+    return lineReader((line) => {
+        let match;
+        if ((match = RECEIVING_FILE.exec(line))) {
+            current = {
+                file: match[3].trim(), index: Number(match[1]), count: match[2] ? Number(match[2]) : null,
+                received: 0, size: null, exactSize: false, estimated: false,
+                blocks: 1, blocksDone: 0, firstBlock: 0, finishedBytes: 0,
+            };
+            changed = true;
+        } else if (!current) {
+            return;
+        } else if ((match = FILE_SIZE.exec(line))) {
+            current.size = Number(match[1]);
+            current.exactSize = true;
+            changed = true;
+        } else if ((match = BLOCK_COUNT.exec(line))) {
+            current.blocks = Number(match[1]);
+        } else if ((match = RECEIVED_COUNTER.exec(line))) {
+            const done = Number(match[1]);
+            const blockSize = Number(match[2]);
+            if (!current.firstBlock) current.firstBlock = blockSize;
+            if (!current.exactSize) {
+                const lastBlock = current.blocksDone >= current.blocks - 1;
+                current.size = lastBlock
+                    ? current.finishedBytes + blockSize             // exact from here
+                    : current.blocks * current.firstBlock;          // at most this
+                current.estimated = !lastBlock;
+            }
+            if (done >= blockSize) {
+                current.finishedBytes += blockSize;
+                current.blocksDone += 1;
+                current.received = current.finishedBytes;
+            } else {
+                current.received = current.finishedBytes + done;
+            }
+            changed = true;
+        }
+    }, () => {
+        if (!changed || !current) return;
+        changed = false;
+        const { file, index, count, received, size, estimated } = current;
+        onProgress({ file, index, count, received, size: size === null ? null : Math.max(size, received), estimated });
+    });
+}
+
 /**
  * Sends a file to the current folder.
+ * @param {string} filePath
+ * @param {Function} [onProgress] - called with the bytes sent so far
  * @returns {Promise<void>} rejects with a PortfolioError
  */
-const transmitFileToPortfolio = (filePath) =>
-    runPortfolioCommand(config.transferCommand, { file: filePath, drive: config.portfolioPath });
+const transmitFileToPortfolio = (filePath, onProgress) =>
+    runPortfolioCommand(config.transferCommand, { file: filePath, drive: config.portfolioPath },
+        onProgress && sentBytesCounter(onProgress));
 
 ///////////////////////////////////////////////////////////////////////////////
 module.exports = {

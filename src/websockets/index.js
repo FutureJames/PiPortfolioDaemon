@@ -343,7 +343,36 @@ const sendUploadResult = (file, ok) => {
     clients.forEach(client => client.send(message));
 }
 
+/**
+ * Tells the pages how far the file being sent to the Portfolio has got, for
+ * the upload progress bar. Carries the id of the page that uploaded it, like
+ * sendUploadResult (the file's result hasn't come yet, so it is still first
+ * in line for that name).
+ * @param {string} file - the file name
+ * @param {number} sent - bytes sent so far
+ * @param {number} size - the file's size in bytes
+ */
+const sendUploadProgress = (file, sent, size) => {
+    const queue = uploadOwners.get(file);
+    const owner = queue && queue.length ? queue[0] : null;
+    const message = JSON.stringify({ command: 'upload_progress', file, sent, size, owner });
+    clients.forEach(client => client.send(message));
+}
+
+/**
+ * Tells the pages how far a download from the Portfolio has got. Only the
+ * page that asked for it (owner) shows it; request tells its downloads apart.
+ * @param {string|null} owner - the downloading page's id
+ * @param {string|null} request - the page's id for this download
+ * @param {object} progress - { file, index, count, received, size, estimated }, see receivedBytesCounter
+ */
+const sendDownloadProgress = (owner, request, progress) => {
+    if (!owner) return;
+    const message = JSON.stringify({ command: 'download_progress', owner, request, ...progress });
+    clients.forEach(client => client.send(message));
+}
+
 ///////////////////////////////////////////////////////////////////////////////
-module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError, sendUploadResult, expectUpload, forgetUpload, notePortfolioResult, refreshFolder };
+module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError, sendUploadResult, sendUploadProgress, sendDownloadProgress, expectUpload, forgetUpload, notePortfolioResult, refreshFolder };
 ///////////////////////////////////////////////////////////////////////////////
   

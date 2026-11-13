@@ -8,6 +8,10 @@ let reconnectDelay = 1000;      // grows to RECONNECT_MAX while the server is do
 const RECONNECT_MAX = 10000;
 let statusHideTimer = null;     // declared before startup: showStatus() uses it
 
+// sent with each upload and download; the server tags progress and results
+// with it so this page only shows its own (not crypto.randomUUID: that needs https)
+const PAGE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 ///////////////////////////////////////////////////////////////////////////////
 
 if (typeof window.WebSocket === 'undefined') {
@@ -191,6 +195,12 @@ function connectWebSocket() {
                 case 'dir':
                     populateFileList(msg);
                     portfolioAnswering();
+                    break;
+                case 'download_progress':
+                    handleDownloadProgress(msg);
+                    break;
+                case 'upload_progress':
+                    handleUploadProgress(msg);
                     break;
                 case 'upload_result':
                     handleUploadResult(msg);
@@ -412,17 +422,56 @@ function populateFileList({ files = [], missing = false, nocard = false } = {}) 
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Download progress: while rpfolio receives a file it counts the bytes, and
+// the server passes that on a few times a second, tagged with this page and
+// the download's id. Each running download registers a function here that
+// shows it.
+const downloadWatchers = new Map();     // download id -> function(progress)
+let nextDownloadId = 1;
+
+// a download's id and the query string that asks the server for its progress
+function newDownload(onProgress) {
+    const id = String(nextDownloadId++);
+    downloadWatchers.set(id, onProgress);
+    return { id, query: `page=${encodeURIComponent(PAGE_ID)}&request=${id}` };
+}
+
+function handleDownloadProgress(msg) {
+    if (msg.owner !== PAGE_ID) return;
+    const watcher = downloadWatchers.get(msg.request);
+    if (watcher) watcher(msg);
+}
+
+// how far through a file, from 0 to 1 (0 while its size isn't known yet)
+function fileFraction({ received, size }) {
+    return size > 0 ? Math.min(1, received / size) : 0;
+}
+
+// e.g. "3.0 KB of 57.6 KB"; "3.0 KB of ~84.0 KB" while the size is only an
+// estimate (rpfolio without the file size patch, for a file over one block)
+function describeDownload({ received, size, estimated }) {
+    if (size === null) return formatBytes(received);
+    return `${formatBytes(received)} of ${estimated ? '~' : ''}${formatBytes(size)}`;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Downloads a file in the background, so a failure shows a message instead of
-// leaving the page for an error page. The link shows "Downloading…" meanwhile
-// (a transfer runs at about 1.5 KB a second).
+// leaving the page for an error page. The link fills up and shows how much
+// has arrived meanwhile (a transfer runs at about 1.5 KB a second).
 async function downloadFile(event) {
     event.preventDefault();
     const link = event.currentTarget;
     if (link.classList.contains('is-downloading')) return;
     const name = link.textContent;
     link.classList.add('is-downloading');
+    link.dataset.progress = 'Waiting…';
+    link.style.setProperty('--progress', '0%');
+    const download = newDownload((progress) => {
+        link.style.setProperty('--progress', `${fileFraction(progress) * 100}%`);
+        link.dataset.progress = describeDownload(progress);
+    });
     try {
-        const res = await fetch(link.href);
+        const res = await fetch(`${link.href}?${download.query}`);
         if (!res.ok) {
             const text = (await res.text()).trim();
             // 503: the Portfolio isn't answering; keep the message up until
@@ -442,7 +491,10 @@ async function downloadFile(event) {
     } catch (error) {
         showStatus(`Download of ${name} failed — check the connection to the Pi`, 'info');
     } finally {
+        downloadWatchers.delete(download.id);
         link.classList.remove('is-downloading');
+        link.style.removeProperty('--progress');
+        delete link.dataset.progress;
     }
 }
 
@@ -450,7 +502,8 @@ async function downloadFile(event) {
 // Download all: every file in the folder being shown, as one .zip. The
 // button sits in the lower right of the file list and only shows when the
 // list has files. The page names the folder, so the server sends the one
-// the user is looking at.
+// the user is looking at. While it runs, the button fills like a pie chart:
+// each file is an equal share (the other files' sizes aren't known ahead).
 function showDownloadAll(show) {
     const button = document.getElementById('download_all');
     // keep a running download's button visible until it finishes
@@ -462,14 +515,26 @@ function showDownloadAll(show) {
 function enableDownloadAll() {
     const button = document.getElementById('download_all');
     const label = button.getAttribute('aria-label');
+    const idleTitle = button.title;
+    const busyText = 'Downloading all files…';
     button.addEventListener('click', async () => {
         if (button.classList.contains('is-busy')) return;
         const folder = currentPath;
         button.classList.add('is-busy');
-        button.setAttribute('aria-label', 'Downloading all files…');
-        button.title = 'Downloading all files… (about 1.5 KB a second)';
+        button.style.setProperty('--progress', '0%');
+        button.setAttribute('aria-label', busyText);
+        button.title = `${busyText} (about 1.5 KB a second)`;
+        const download = newDownload((progress) => {
+            const { file, index, count } = progress;
+            const overall = count ? (index - 1 + fileFraction(progress)) / count : fileFraction(progress);
+            button.style.setProperty('--progress', `${overall * 100}%`);
+            const of = count ? ` of ${count}` : '';
+            const text = `Downloading file ${index}${of}: ${file}, ${describeDownload(progress)}`;
+            button.title = text;
+            button.setAttribute('aria-label', text);
+        });
         try {
-            const res = await fetch(`/download-all?folder=${encodeURIComponent(folder)}`);
+            const res = await fetch(`/download-all?folder=${encodeURIComponent(folder)}&${download.query}`);
             if (!res.ok) {
                 const text = (await res.text()).trim();
                 showStatus(text ? `Download failed: ${text}` : 'Download of all files failed',
@@ -490,9 +555,11 @@ function enableDownloadAll() {
         } catch (error) {
             showStatus('Download of all files failed — check the connection to the Pi', 'info');
         } finally {
+            downloadWatchers.delete(download.id);
             button.classList.remove('is-busy');
+            button.style.removeProperty('--progress');
             button.setAttribute('aria-label', label);
-            button.title = 'Download all files in this folder (.zip)';
+            button.title = idleTitle;
             // the list may have changed meanwhile
             showDownloadAll(document.querySelectorAll('#file_list li').length > 0);
         }
@@ -535,21 +602,34 @@ function sendFolder(folder) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// Upload progress bar: counts the files of the current batch as the server
-// reports each one reaching the Portfolio (or failing). Not a byte-level
-// progress bar: rpfolio doesn't report that.
+// Upload progress bar: follows the bytes of the current batch as the server
+// reports them reaching the Portfolio. rpfolio counts every byte it sends;
+// the server passes that on a few times a second for the file being sent,
+// and says when each file has finished (or failed).
 const uploadProgress = {
-    total: 0,
-    done: 0,
+    total: 0,               // files in the batch
+    done: 0,                // files finished (sent or failed)
     failed: 0,
+    totalBytes: 0,
+    doneBytes: 0,           // bytes of the finished files
+    current: null,          // the file being sent: { file, sent, size }
     lost: false,            // the connection dropped before every result came
-    pending: new Map(),     // file name -> how many of that name are still due
+    pending: new Map(),     // file name -> sizes of the files of that name still due
     hideTimer: null,
 };
 
-// sent with each upload; the server tags results with it so this page only
-// counts its own files (not crypto.randomUUID: that needs https)
-const PAGE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+function resetUploadProgress() {
+    Object.assign(uploadProgress, {
+        total: 0, done: 0, failed: 0, totalBytes: 0, doneBytes: 0, current: null, lost: false,
+    });
+    uploadProgress.pending.clear();
+}
+
+// e.g. "512 bytes", "3.4 KB"
+function formatBytes(bytes) {
+    if (bytes === 1) return '1 byte';
+    return bytes < 1024 ? `${bytes} bytes` : `${(bytes / 1024).toFixed(1)} KB`;
+}
 
 function renderUploadProgress() {
     const p = uploadProgress;
@@ -559,15 +639,28 @@ function renderUploadProgress() {
     const track = box.querySelector('.progress-track');
     box.classList.toggle('is-active', p.total > 0);
     box.classList.toggle('has-failures', p.failed > 0 || p.lost);
-    fill.style.width = p.total ? `${(p.done / p.total) * 100}%` : '0%';
-    track.setAttribute('aria-valuemax', String(p.total));
-    track.setAttribute('aria-valuenow', String(p.done));
+    let fraction = 0;
+    if (p.done >= p.total && p.total > 0) {
+        fraction = 1;
+    } else if (p.totalBytes > 0) {
+        fraction = (p.doneBytes + (p.current ? p.current.sent : 0)) / p.totalBytes;
+    } else if (p.total > 0) {
+        fraction = p.done / p.total;    // only empty files
+    }
+    const percent = Math.min(100, Math.floor(fraction * 100));
+    fill.style.width = `${percent}%`;
+    track.setAttribute('aria-valuenow', String(percent));
+    const failed = p.failed ? ` (${p.failed} failed)` : '';
+    const which = p.total > 1 ? ` · file ${p.done + 1} of ${p.total}` : '';
     if (p.total === 0) {
         text.innerHTML = '&nbsp;';
     } else if (p.lost) {
         text.textContent = `Connection lost after ${p.done} of ${p.total} — see Activity for the rest`;
+    } else if (p.done < p.total && p.current) {
+        const { file, sent, size } = p.current;
+        text.textContent = `Sending ${file}: ${formatBytes(sent)} of ${formatBytes(size)}${which}${failed}`;
     } else if (p.done < p.total) {
-        text.textContent = `Sending to the Portfolio: ${p.done} of ${p.total}` + (p.failed ? ` (${p.failed} failed)` : '');
+        text.textContent = `Waiting for the Portfolio…${which}${failed}`;
     } else {
         const sent = p.total - p.failed;
         text.textContent = p.failed ? `${sent} of ${p.total} sent, ${p.failed} failed — see Activity` : `${sent} of ${p.total} sent`;
@@ -580,11 +673,15 @@ function trackUploads(files) {
     clearTimeout(p.hideTimer);
     if (p.total > 0 && (p.done === p.total || p.lost)) {
         // the previous batch had finished (or was given up): start counting afresh
-        Object.assign(p, { total: 0, done: 0, failed: 0, lost: false });
-        p.pending.clear();
+        resetUploadProgress();
     }
-    files.forEach(file => p.pending.set(file.name, (p.pending.get(file.name) || 0) + 1));
+    files.forEach(file => {
+        const sizes = p.pending.get(file.name) || [];
+        sizes.push(file.size);
+        p.pending.set(file.name, sizes);
+    });
     p.total += files.length;
+    p.totalBytes += files.reduce((sum, file) => sum + file.size, 0);
     renderUploadProgress();
 }
 
@@ -593,21 +690,39 @@ function untrackUploads(files) {
     const p = uploadProgress;
     if (p.lost) return;     // already given up on this batch
     files.forEach(file => {
-        const left = (p.pending.get(file.name) || 0) - 1;
-        if (left > 0) p.pending.set(file.name, left); else p.pending.delete(file.name);
+        const sizes = p.pending.get(file.name);
+        if (!sizes) return;
+        sizes.pop();
+        if (sizes.length === 0) p.pending.delete(file.name);
+        p.total = Math.max(0, p.total - 1);
+        p.totalBytes = Math.max(0, p.totalBytes - file.size);
     });
-    p.total = Math.max(0, p.total - files.length);
     renderUploadProgress();
     finishUploadsIfDone();
+}
+
+// how far the file being sent has got (ignores uploads from other pages)
+function handleUploadProgress({ file, sent, size, owner }) {
+    const p = uploadProgress;
+    if (owner !== PAGE_ID || p.lost) return;
+    const sizes = p.pending.get(file);
+    if (!sizes) return;
+    // the size this page counted for it (the same file, so normally the same)
+    const ownSize = sizes[0];
+    const ownSent = size > 0 ? Math.round((sent / size) * ownSize) : 0;
+    p.current = { file, sent: ownSent, size: ownSize };
+    renderUploadProgress();
 }
 
 // one file finished on the server (ignores uploads from other pages or the shared folder)
 function handleUploadResult({ file, ok, owner }) {
     const p = uploadProgress;
     if (owner !== PAGE_ID || p.lost) return;
-    const left = p.pending.get(file) || 0;
-    if (!left) return;
-    if (left > 1) p.pending.set(file, left - 1); else p.pending.delete(file);
+    const sizes = p.pending.get(file);
+    if (!sizes) return;
+    p.doneBytes += sizes.shift();
+    if (sizes.length === 0) p.pending.delete(file);
+    if (p.current && p.current.file === file) p.current = null;
     p.done += 1;
     if (!ok) p.failed += 1;
     renderUploadProgress();
@@ -620,8 +735,7 @@ function finishUploadsIfDone() {
     clearTimeout(p.hideTimer);
     // leave the summary up for a moment, then clear the bar
     p.hideTimer = setTimeout(() => {
-        Object.assign(p, { total: 0, done: 0, failed: 0, lost: false });
-        p.pending.clear();
+        resetUploadProgress();
         renderUploadProgress();
     }, p.failed || p.lost ? 8000 : 4000);
 }
@@ -632,6 +746,7 @@ function abandonUploads() {
     const p = uploadProgress;
     if (p.total === 0 || p.done >= p.total || p.lost) return;
     p.lost = true;
+    p.current = null;
     p.pending.clear();
     renderUploadProgress();
     finishUploadsIfDone();

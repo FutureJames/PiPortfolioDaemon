@@ -4,8 +4,11 @@ const fs = require('fs');
 const { transmitFileToPortfolio, PortfolioError } = require('../utils');
 
 const config = require('../config');
+
+// how often (ms) to tell the pages how far an upload has got
+const PROGRESS_INTERVAL = 500;
 const {
-    sendToActivityLog, refreshFolder, sendUploadResult, sendPortfolioError, notePortfolioResult,
+    sendToActivityLog, refreshFolder, sendUploadResult, sendUploadProgress, sendPortfolioError, notePortfolioResult,
 } = require('../websockets');
 
 /**
@@ -70,9 +73,18 @@ const transferFile = async (filePath) => {
     if (!fs.existsSync(filePath)) {
         return { ok: false, reason: '(file no longer exists)', removed: true };
     }
+    const fileName = path.basename(filePath);
     let result = { ok: true };
     try {
-        await transmitFileToPortfolio(filePath);
+        const size = fs.statSync(filePath).size;
+        // rpfolio counts every byte; the pages only need a few updates a second
+        let lastSent = 0;
+        await transmitFileToPortfolio(filePath, (sent) => {
+            const now = Date.now();
+            if (now - lastSent < PROGRESS_INTERVAL && sent < size) return;
+            lastSent = now;
+            sendUploadProgress(fileName, Math.min(sent, size), size);
+        });
         notePortfolioResult(null);
     } catch (error) {
         let reason = error instanceof PortfolioError ? error.reason : `(${error.message})`;

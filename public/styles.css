@@ -475,6 +475,10 @@ input[type="submit"]:disabled {
 
 .download-all.is-busy {
     cursor: progress;
+    /* fills clockwise like a pie chart as the files arrive */
+    background: conic-gradient(
+        var(--button-bg) var(--progress, 0%),
+        color-mix(in srgb, var(--button-bg) 40%, var(--surface, #fff)) var(--progress, 0%));
 }
 
 .download-all.is-busy .download-all-icon {
@@ -545,15 +549,21 @@ input[type="submit"]:disabled {
     opacity: 1;
 }
 
-/* A download on its way from the Portfolio (about 1.5 KB a second) */
+/* A download on its way from the Portfolio (about 1.5 KB a second): the
+   row fills from the left as the bytes arrive, and says how many have */
 #file_list a.is-downloading {
     cursor: progress;
-    background: var(--accent-soft);
+    background:
+        linear-gradient(to right,
+            color-mix(in srgb, var(--accent) 22%, transparent) var(--progress, 0%),
+            transparent var(--progress, 0%)),
+        var(--accent-soft);
 }
 
 #file_list a.is-downloading::after {
-    content: 'Downloading…';
+    content: attr(data-progress);
     font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
     opacity: 1;
 }
 
