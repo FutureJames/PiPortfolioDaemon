@@ -160,6 +160,15 @@ rpfolio -l 'C:\*.*'
 
 You should see a list of the files on the Portfolio's `C:` drive. If it waits at "Waiting for Portfolio…", check the wiring and that the Portfolio is in server mode.
 
+To check that files can be sent as well, transfer a small test file:
+
+```bash
+printf 'Hello from the Pi\r\n' > HELLO.TXT
+rpfolio -t HELLO.TXT 'C:\'
+```
+
+`HELLO.TXT` should appear on the Portfolio's `C:` drive. Delete it there afterwards, and on the Pi with `rm HELLO.TXT`.
+
 ### 6. Install PiPortfolioDaemon
 
 ```bash
