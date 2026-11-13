@@ -337,16 +337,19 @@ function setListLoading(loading) {
 // empties the list and shows the spinner while a new listing is fetched
 function startListLoading() {
     clearFileList();
-    document.getElementById('dir_container').classList.remove('is-missing');
+    document.getElementById('dir_container').classList.remove('is-missing', 'is-nocard');
     setListLoading(true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // lists all the files for the folder; `missing` means the folder doesn't
-// exist on the Portfolio (shown as "Folder not found" instead of "No files")
-function populateFileList({ files = [], missing = false } = {}) {
+// exist on the Portfolio (shown as "Folder not found" instead of "No files"),
+// `nocard` that the A: memory card is out (shown as "No card in A:\")
+function populateFileList({ files = [], missing = false, nocard = false } = {}) {
     setListLoading(false);
-    document.getElementById('dir_container').classList.toggle('is-missing', missing === true);
+    const container = document.getElementById('dir_container');
+    container.classList.toggle('is-missing', missing === true);
+    container.classList.toggle('is-nocard', nocard === true);
     const fileList = document.getElementById('file_list');
     fileList.innerHTML = '';
     if (files === false) return;

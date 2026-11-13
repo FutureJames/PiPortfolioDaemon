@@ -214,7 +214,7 @@ Click the **?** button on the page for the same instructions.
 
 **Before you start** — connect the Portfolio and start its file transfer server mode (**Setup** menu, or **Atari + S**, **F**, **S**). If it isn't listening, the page shows *"No connection to the Atari Portfolio"*.
 
-**Drives** — the toggle switches between `A:\` (the removable memory card) and `C:\` (the built-in RAM disk). The list shows the files on that drive.
+**Drives** — the toggle switches between `A:\` (the removable memory card) and `C:\` (the built-in RAM disk). The list shows the files on that drive, or *"No card in A:\"* if the memory card is out.
 
 **Folders** — the Portfolio doesn't report folders in its file listings, so open one by typing its name in the directory field (for example `GAMES` or `GAMES\SAVES`) and pressing **Enter** or **Open**. Leave it blank for the drive's root. **↰ ..** at the top of the list goes up one level. If the folder doesn't exist, the activity log shows ❌ *(folder not found)* and the page goes back up to the nearest folder that does.
 

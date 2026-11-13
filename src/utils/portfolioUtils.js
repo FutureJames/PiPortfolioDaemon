@@ -56,11 +56,13 @@ const getDirListFromPortfolio = () => {
  * Whether the current folder exists on the Portfolio. Listings never show
  * folders, and an empty folder lists the same as a missing one, but every
  * existing DOS folder contains the NUL device: listing FOLDER\NUL finds it
- * only if the folder is there.
+ * only if the folder is there. This also works for the A:\ root, which has
+ * no NUL while the memory card is out. C:\ is the built-in RAM disk and is
+ * always there, so it isn't checked.
  * @returns {boolean|null} true / false, or null if the Portfolio didn't answer
  */
 const folderExists = () => {
-    if (config.portfolioPath.length <= 3) return true;   // a drive root, e.g. 'c:\'
+    if (config.portfolioPath.toLowerCase() === 'c:\\') return true;
     try {
       return parseListing(runPortfolioCommand(config.existsCommand, { drive: config.portfolioPath }, {
         timeout: config.portfolioTimeout

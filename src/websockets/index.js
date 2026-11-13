@@ -47,13 +47,15 @@ function logFolder(status) {
     const result = {
         ok: '\u{2705}',
         missing: '\u{274c} (folder not found)',
+        nocard: '\u{274c} (no card in A:)',
         error: '\u{274c} (no connection to the Portfolio)',
     }[status];
     sendToActivityLog(`📁 ${config.portfolioPath} ${result}\n`);
 }
 
 // After a listing: if the folder doesn't exist, go up a level (logging
-// each step) until one does. A drive root always exists, so this ends.
+// each step) until one does. This stops at the drive root: C:\ always
+// exists, and A:\ without its card reports 'nocard' rather than 'missing'.
 function leaveMissingFolder(status) {
     while (status === 'missing' && config.portfolioPath.length > 3) {
         console.log(`- folder not found, going up: ${config.portfolioPath}`);
@@ -160,10 +162,16 @@ function sendDirList() {
             return 'error';
         }
         if (exists === false) {
-            newMessage.missing = true;
+            // a missing drive root means the A: memory card is out
+            if (config.portfolioPath.length <= 3) {
+                newMessage.nocard = true;
+            } else {
+                newMessage.missing = true;
+            }
         }
     }
     clients.forEach(client => client.send(JSON.stringify(newMessage)));
+    if (newMessage.nocard) return 'nocard';
     return newMessage.missing ? 'missing' : 'ok';
 }
 

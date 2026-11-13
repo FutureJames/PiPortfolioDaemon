@@ -409,6 +409,11 @@ input[type="submit"]:disabled {
     content: 'Folder not found';
 }
 
+/* The A: memory card has been taken out */
+#dir_container.is-nocard #file_list:empty::before {
+    content: 'No card in A:\\';
+}
+
 /* While a listing is loading: no "No files", show the spinner instead */
 #dir_container.is-loading #file_list:empty::before {
     content: none;
