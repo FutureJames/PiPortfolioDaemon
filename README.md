@@ -227,7 +227,7 @@ Click the **?** button on the page for the same instructions.
 
 **Folders** — the Portfolio doesn't report folders in its file listings, so open one by typing its name in the directory field (for example `GAMES` or `GAMES\SAVES`) and pressing **Enter** or **Open**. Leave it blank for the drive's root. **↰ ..** at the top of the list goes up one level. If the folder doesn't exist, the activity log shows ❌ *(folder not found)* and the page goes back up to the nearest folder that does.
 
-**Downloading** — click a file name. It shows *Downloading…* until the file arrives (transfers run at roughly 1.5 KB a second). If the download fails, a message says why and the activity log shows ❌.
+**Downloading** — click a file name. It shows *Downloading…* until the file arrives (transfers run at roughly 1.5 KB a second). If the download fails, a message says why and the activity log shows ❌. The round download button in the lower right of the list downloads every file in the folder as one `.zip`, named after the folder (`GAMES.zip`, or `C-drive.zip` for a drive's root).
 
 **Uploading** — drop one or more files onto the upload box to send them straight away, or use **Choose files**, then **Upload**. They go to the folder shown above the list and replace any files with the same names. A bar under the buttons counts the files as each one reaches the Portfolio. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again. Uploads run at roughly 1 KB a second, so a large file takes a while; the rest of the page keeps working meanwhile.
 

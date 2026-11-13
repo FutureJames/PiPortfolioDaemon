@@ -2,7 +2,7 @@
 const express = require('express');
 const multer  = require('multer');
 const config = require('../config');
-const { getHomePage, serveStaticFiles, downloadFile, uploadFile } = require('../controllers');
+const { getHomePage, serveStaticFiles, downloadFile, downloadAllFiles, uploadFile } = require('../controllers');
 const { expectUpload, forgetUpload } = require('../websockets');
 
 // most files the page sends in one request (it splits bigger batches)
@@ -36,6 +36,8 @@ const router = express.Router();
 router.get('/', getHomePage);
 router.get('*.(html|css|js|png|ico)', serveStaticFiles);
 router.get('/download/:filename', downloadFile);
+// every file in a folder as one .zip (?folder=a:\GAMES\)
+router.get('/download-all', downloadAllFiles);
 // one or more files per upload (the page sends them in groups of up to 20)
 const receiveFiles = upload.array('filesToUpload', MAX_FILES_PER_UPLOAD);
 router.post('/upload', (req, res, next) => {

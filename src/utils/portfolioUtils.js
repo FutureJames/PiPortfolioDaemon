@@ -214,6 +214,33 @@ const receiveFileFromPortfolio = async (fileName) => {
 };
 
 /**
+ * Receives every file in a folder (one rpfolio command, using a wildcard)
+ * into a new temporary folder. Folders inside it aren't included: the
+ * Portfolio's listings don't contain them.
+ * @param {string} folder - e.g. 'a:\\GAMES\\'
+ * @returns {Promise<{ok: true, dir: string, files: string[], cleanup: Function} | {ok: false, error: PortfolioError}>}
+ *   on success, call cleanup() once the files have been sent on
+ */
+const receiveAllFromPortfolio = async (folder) => {
+    const dir = fs.mkdtempSync(path.join(config.tmpFolder, 'pofo-'));
+    const cleanup = () => fs.rmSync(dir, { recursive: true, force: true });
+    try {
+        await runPortfolioCommand(config.receiveCommand, { file: '*.*', drive: folder, dest: dir });
+        const files = fs.readdirSync(dir).sort();
+        if (files.length === 0) throw new PortfolioError('failed', '(no files in this folder)');
+        return { ok: true, dir, files, cleanup };
+    } catch (error) {
+        cleanup();      // no partial files left behind
+        let failure = error instanceof PortfolioError ? error : new PortfolioError('failed', `(${error.message})`);
+        // rpfolio says "File not found" when the wildcard matches nothing
+        if (failure.reason === '(file not found on the Portfolio)') {
+            failure = new PortfolioError('failed', '(no files in this folder)');
+        }
+        return { ok: false, error: failure };
+    }
+};
+
+/**
  * Sends a file to the current folder.
  * @returns {Promise<void>} rejects with a PortfolioError
  */
@@ -223,6 +250,6 @@ const transmitFileToPortfolio = (filePath) =>
 ///////////////////////////////////////////////////////////////////////////////
 module.exports = {
     PortfolioError, runPortfolioCommand, getDirListFromPortfolio, folderExists,
-    receiveFileFromPortfolio, transmitFileToPortfolio,
+    receiveFileFromPortfolio, receiveAllFromPortfolio, transmitFileToPortfolio,
 };
 ///////////////////////////////////////////////////////////////////////////////

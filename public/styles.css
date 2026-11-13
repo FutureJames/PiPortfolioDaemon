@@ -349,6 +349,15 @@ input[type="submit"]:disabled {
     padding: 0 14px;
 }
 
+/* The file list box plus the download-all button pinned to its lower right
+   corner (outside the scrolling box, so it stays put while the list scrolls) */
+.dir-panel {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
 #dir_container {
     flex: 1;
     min-height: 220px;
@@ -422,6 +431,56 @@ input[type="submit"]:disabled {
 /* While a listing is loading: no "No files", show the spinner instead */
 #dir_container.is-loading #file_list:empty::before {
     content: none;
+}
+
+/* Download all: a filled circle like the help button, slightly smaller */
+.download-all {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    color: #fff;
+    background: var(--button-bg);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+    cursor: pointer;
+}
+
+.download-all[hidden] {
+    display: none;
+}
+
+.download-all:hover {
+    background: var(--button-hover);
+}
+
+/* room below the last file so the button never covers it */
+.dir-panel.has-download-all #dir_container {
+    padding-bottom: 54px;
+}
+
+/* while the files are on their way: a spinner instead of the arrow */
+.download-all-spinner {
+    display: none;
+    border-color: rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+}
+
+.download-all.is-busy {
+    cursor: progress;
+}
+
+.download-all.is-busy .download-all-icon {
+    display: none;
+}
+
+.download-all.is-busy .download-all-spinner {
+    display: block;
 }
 
 .list-loading {

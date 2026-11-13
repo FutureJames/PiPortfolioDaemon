@@ -45,6 +45,7 @@
                     <button type="button" id="folder_open" class="button-secondary">Open</button>
                 </div>
 
+                <div class="dir-panel">
                 <div id="dir_container" class="is-loading">
                     <!-- shown only below a drive's root; opens the parent folder -->
                     <button type="button" id="dir_up" class="dir-up" hidden>
@@ -57,6 +58,20 @@
                         <span class="spinner" aria-hidden="true"></span>
                         <span>Loading…</span>
                     </div>
+                </div>
+                    <!-- every file in the folder as one .zip; shown when there are files -->
+                    <button type="button" id="download_all" class="download-all" hidden
+                            title="Download all files in this folder (.zip)"
+                            aria-label="Download all files in this folder">
+                        <svg class="download-all-icon" viewBox="0 0 24 24" width="18" height="18"
+                             fill="none" stroke="currentColor" stroke-width="2.2"
+                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M12 4v11"/>
+                            <path d="M7 10.5l5 5 5-5"/>
+                            <path d="M4.5 16.5v2.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-2.5"/>
+                        </svg>
+                        <span class="spinner download-all-spinner" aria-hidden="true"></span>
+                    </button>
                 </div>
 
                 <div id="upload_form">
@@ -129,7 +144,9 @@
 
             <h3>Downloading</h3>
             <p>Click a file name to download it from the Portfolio. It shows “Downloading…”
-               until the file arrives (roughly 1.5&nbsp;KB a second).</p>
+               until the file arrives (roughly 1.5&nbsp;KB a second). The round download button
+               in the lower right of the list downloads every file in the folder as one
+               <code>.zip</code> (named after the folder, e.g. <code>GAMES.zip</code>).</p>
 
             <h3>Uploading</h3>
             <p>Drop one or more files onto the upload box to send them straight away, or use
