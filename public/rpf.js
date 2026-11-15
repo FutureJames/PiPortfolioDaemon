@@ -539,7 +539,7 @@ function openSubfolder(name) {
     }
 }
 
-// "C: 22,016 of 31,232 bytes free" under the drive toggle (PortfolioServer only)
+// "C: 22,016 of 31,232 bytes free" at the bottom of the file list (PortfolioServer only)
 let freeSpace = null;
 function showFreeSpace(free) {
     freeSpace = free;
@@ -642,7 +642,6 @@ function showDownloadAll(show) {
     // keep a running download's button visible until it finishes
     if (!show && button.classList.contains('is-busy')) return;
     button.hidden = !show;
-    button.parentElement.classList.toggle('has-download-all', show);
     if (button.classList.contains('is-busy')) return;
     const files = downloadableFiles();
     if (show && listing.full) {

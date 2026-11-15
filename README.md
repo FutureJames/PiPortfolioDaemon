@@ -261,7 +261,7 @@ Click the **?** button on the page for the same instructions.
 - shows each file's **size and date**, and **hidden** (`h`) and **system** (`s`) files, dimmed: the Portfolio won't send those, so they can't be downloaded, but they can be deleted;
 - has a **delete** button on each file (and on each empty folder), confirmed every time, since it can't be undone; read-only files (`r`) can't be deleted;
 - has a **New folder** button next to **Open**;
-- shows the drive's **free space** under the drive toggle, and warns before an upload that won't fit;
+- shows the drive's **free space** at the bottom of the file list, and warns before an upload that won't fit;
 - can **stop** PortfolioServer, and **update** it to the latest release from GitHub, from the footer.
 
 The page notices by itself when you switch servers or `rpfolio` builds: it checks on every page load, after an error, and whenever the Portfolio comes back. Under the built-in server the extra features disappear and the footer says how to get them.
