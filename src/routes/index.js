@@ -2,7 +2,7 @@
 const express = require('express');
 const multer  = require('multer');
 const config = require('../config');
-const { getHomePage, serveStaticFiles, downloadFile, downloadAllFiles, uploadFile } = require('../controllers');
+const { getHomePage, serveStaticFiles, downloadFile, downloadAllFiles, uploadFile, updateServer } = require('../controllers');
 const { expectUpload, forgetUpload } = require('../websockets');
 
 // most files the page sends in one request (it splits bigger batches)
@@ -50,5 +50,16 @@ router.post('/upload', (req, res, next) => {
         res.status(400).send('Upload failed.');
     });
 }, uploadFile);
+
+// Update PortfolioServer: one new SERVER.COM, kept in the temporary folder
+// (not the upload folder, whose files go to the folder being shown)
+const serverUpload = multer({ dest: config.tmpFolder, limits: { fileSize: 64 * 1024, files: 1 } }).single('server');
+router.post('/update-server', (req, res, next) => {
+    serverUpload(req, res, (err) => {
+        if (!err) return next();
+        console.log(`- PortfolioServer update failed: ${err.message}`);
+        res.status(400).type('text/plain').send(err.code === 'LIMIT_FILE_SIZE' ? 'That file is too big for SERVER.COM.' : 'Upload failed.');
+    });
+}, updateServer);
 
 module.exports = router;

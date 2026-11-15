@@ -21,15 +21,34 @@ const config = {
     homepage: path.join(__dirname, '../..', 'public', 'rpf.html'),
     sharedFolder: path.join(__dirname, '../..', 'upload'),
     tmpFolder: '/tmp',
+    // the rpfolio program (transfolio's Raspberry Pi build); RPFOLIO=/path
+    // runs another build, e.g. for testing. <rpfolio> in the commands below
+    // stands for it.
+    rpfolio: process.env.RPFOLIO || 'rpfolio',
     // !!! TODO: be better w/ *.*
-    listCommand: 'rpfolio -l <drive>*.*',
+    listCommand: '<rpfolio> -l <drive>*.*',
     // every existing DOS folder contains the NUL device, so this finds "NUL"
     // only if the folder exists (an empty and a missing folder list the same)
-    existsCommand: 'rpfolio -l <drive>NUL',
-    receiveCommand: 'rpfolio -r -f <drive><file> <dest>',
-    transferCommand: 'rpfolio -f -t <file> <drive>',
+    existsCommand: '<rpfolio> -l <drive>NUL',
+    receiveCommand: '<rpfolio> -r -f <drive><file> <dest>',
+    transferCommand: '<rpfolio> -f -t <file> <drive>',
+    // PortfolioServer's own commands (SERVER.COM, which replaces the
+    // Portfolio's built-in server), in the rpfolio with
+    // rpfolio-portfolioserver.patch. The built-in server ignores them, and
+    // rpfolio then exits with code 3; the original rpfolio prints its help.
+    infoCommand: '<rpfolio> -i',
+    // files and folders, with attributes, size, date and time
+    longListCommand: '<rpfolio> -x <pattern>',
+    deleteCommand: '<rpfolio> -e <path>',
+    mkdirCommand: '<rpfolio> -m <path>',
+    rmdirCommand: '<rpfolio> -k <path>',
+    freeCommand: '<rpfolio> -s <drive>',
+    quitCommand: '<rpfolio> -q',
+    // where "Update PortfolioServer" puts a new SERVER.COM
+    serverComPath: 'C:\\SERVER.COM',
     ID: 'Portfolio Folder Daemon',
-    VERSION: 'v1.0 - LH 05/2023',
+    // the web app's version, shown on the page
+    VERSION: require('../../package.json').version,
     BEEP: '\u0007',
 };
 

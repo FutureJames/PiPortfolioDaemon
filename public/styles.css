@@ -16,6 +16,7 @@
     --accent-soft: #f4e9f8;
     --link: #2552c7;
     --success: #2e7d4f;
+    --danger: #c43c3c;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.05);
     --radius: 12px;
     --control-h: 34px;          /* height of small header controls */
@@ -39,6 +40,7 @@
         --accent-soft: #33243a;
         --link: #8fb0ff;
         --success: #6fcf97;
+        --danger: #e06464;
         --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
         color-scheme: dark;
     }
@@ -351,6 +353,37 @@ input[type="submit"]:disabled {
     padding: 0 14px;
 }
 
+/* New folder (PortfolioServer only): a square icon button after Open */
+.folder-row > .folder-new {
+    display: grid;
+    place-items: center;
+    width: var(--control-h);
+    padding: 0;
+}
+
+.folder-new[hidden] {
+    display: none;
+}
+
+/* greyed out (built-in server): keep the outlined look */
+.button-secondary:disabled,
+.button-secondary:disabled:hover {
+    background: transparent;
+}
+
+/* The drive's free space (PortfolioServer only), under the drive toggle */
+.free-space {
+    margin: -6px 0 8px;
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.free-space.is-low {
+    color: var(--danger);
+}
+
 /* The file list box plus the download-all button pinned to its lower right
    corner (outside the scrolling box, so it stays put while the list scrolls) */
 .dir-panel {
@@ -549,6 +582,158 @@ input[type="submit"]:disabled {
     opacity: 1;
 }
 
+/* PortfolioServer's listing: folders first, then files, each row with its
+   size and date, and a delete button at the end */
+#file_list li.entry {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+#file_list .entry .entry-main {
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+}
+
+/* the folder rows are buttons: look like the file rows */
+#file_list button.entry-main {
+    display: flex;
+    align-items: center;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font: 600 0.95rem var(--mono);
+    line-height: 1.5;
+    text-align: left;
+    color: var(--accent);
+    background: transparent;
+}
+
+#file_list button.entry-main:hover {
+    background: var(--accent-soft);
+}
+
+/* hidden and system files: dimmed, not a link (they can't be downloaded) */
+#file_list span.entry-main {
+    display: flex;
+    align-items: center;
+    padding: 5px 8px;
+    font: 0.95rem var(--mono);
+    color: var(--text-muted);
+    opacity: 0.6;
+    cursor: default;
+}
+
+.entry-icon {
+    display: grid;
+    flex: none;
+    margin-right: -2px;
+}
+
+.entry-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* r (read-only), h (hidden), s (system) */
+.entry-mark {
+    flex: none;
+    padding: 0 4px;
+    font: 600 0.7rem/1.4 var(--mono);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.entry-size,
+.entry-date {
+    flex: none;
+    font: 0.8rem var(--sans);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.entry-size {
+    width: 5.2em;
+}
+
+.entry-date {
+    width: 6.6em;
+}
+
+/* the same arrow column in every row, so sizes and dates line up */
+#file_list .entry .entry-main::after {
+    flex: none;
+    width: 0.9em;
+    text-align: right;
+}
+
+#file_list .entry button.entry-main::after {
+    content: '›';
+    font-family: var(--sans);
+    color: var(--text-muted);
+}
+
+#file_list .entry span.entry-main::after {
+    content: '';
+}
+
+/* while downloading, the progress takes the place of the size and date */
+#file_list .entry a.is-downloading .entry-size,
+#file_list .entry a.is-downloading .entry-date {
+    display: none;
+}
+
+#file_list .entry a.is-downloading::after {
+    width: auto;
+}
+
+.entry-delete {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    color: var(--text-muted);
+    background: transparent;
+    border-radius: 6px;
+    opacity: 0;
+}
+
+#file_list li.entry:hover .entry-delete,
+.entry-delete:focus-visible {
+    opacity: 1;
+}
+
+.entry-delete:hover {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+/* no hover on touch screens: always show it */
+@media (hover: none) {
+    .entry-delete {
+        opacity: 0.7;
+    }
+}
+
+/* a narrow list (phones, or two columns in a small window): the date makes
+   way for the name */
+#dir_container {
+    container-type: inline-size;
+}
+
+@container (max-width: 380px) {
+    .entry-date {
+        display: none;
+    }
+}
+
 /* A download on its way from the Portfolio (about 1.5 KB a second): the
    row fills from the left as the bytes arrive, and says how many have */
 #file_list a.is-downloading {
@@ -733,6 +918,157 @@ input[type="submit"]:disabled {
 }
 
 /* ------------------------------------------------------------------------- */
+/* Footer: versions of the web app, rpfolio and the Portfolio's server       */
+/* ------------------------------------------------------------------------- */
+
+.app-footer {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.footer-versions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 18px;
+}
+
+.footer-versions > span {
+    white-space: nowrap;
+}
+
+.footer-versions > span > span:not(.footer-actions) {
+    color: var(--text);
+}
+
+.footer-actions[hidden] {
+    display: none;
+}
+
+.footer-actions {
+    margin-left: 6px;
+}
+
+.link-button {
+    padding: 0 3px;
+    font-size: inherit;
+    font-weight: 500;
+    color: var(--link);
+    background: transparent;
+    border-radius: 4px;
+}
+
+.link-button:hover {
+    text-decoration: underline;
+    background: transparent;
+}
+
+.link-button:disabled,
+.link-button:disabled:hover {
+    background: transparent;
+    text-decoration: none;
+}
+
+.footer-hint {
+    max-width: 640px;
+    margin: 4px auto 0;
+}
+
+.footer-hint[hidden] {
+    display: none;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Questions: confirm a delete, name a new folder                            */
+/* ------------------------------------------------------------------------- */
+
+.ask-dialog {
+    width: min(420px, calc(100% - 32px));
+    margin: auto;
+    padding: 20px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+}
+
+.ask-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.ask-dialog h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    overflow-wrap: anywhere;
+}
+
+.ask-dialog p {
+    font-size: 0.92rem;
+    overflow-wrap: anywhere;
+}
+
+.ask-dialog p[hidden],
+.ask-field[hidden] {
+    display: none;
+}
+
+.ask-field {
+    display: flex;
+    align-items: center;
+    height: var(--control-h);
+    margin-top: 12px;
+    padding: 0 10px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.ask-field:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+#ask_input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    font: 0.9rem var(--mono);
+    text-transform: uppercase;
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    outline: none;
+}
+
+.ask-dialog .ask-error {
+    min-height: 1.4em;
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: var(--danger);
+}
+
+.ask-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.ask-actions button {
+    height: var(--control-h);
+    padding: 0 16px;
+}
+
+.ask-actions button.is-danger,
+.ask-actions button.is-danger:hover {
+    background: var(--danger);
+}
+
+/* ------------------------------------------------------------------------- */
 /* Connection status (replaces the old alert pop-ups)                        */
 /* ------------------------------------------------------------------------- */
 
@@ -856,6 +1192,10 @@ input[type="submit"]:disabled {
     padding: 8px 20px 20px;
     font-size: 0.92rem;
     line-height: 1.55;
+}
+
+.help-body p + p {
+    margin-top: 8px;
 }
 
 .help-body h3 {
