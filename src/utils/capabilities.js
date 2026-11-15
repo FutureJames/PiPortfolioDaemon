@@ -24,6 +24,7 @@ const EventEmitter = require('events');
 
 const config = require('../config');
 const { detectRpfolio, getServerInfo } = require('./portfolioUtils');
+const { getLatestRelease, isNewer } = require('./serverRelease');
 
 const events = new EventEmitter();
 
@@ -32,12 +33,22 @@ const state = {
     // 'unknown' until rpfolio -i has answered; 'stopped' after the page
     // stopped PortfolioServer, until a server answers again
     server: { kind: 'unknown', version: null },
+    // PortfolioServer's latest release on GitHub ({ version, url, size }), or
+    // null until known or while GitHub can't be reached
+    latest: null,
+    // the version just sent to the Portfolio, until PortfolioServer is
+    // restarted and reports it
+    sent: null,
 };
 
 function setState(rpfolio, server) {
     const before = JSON.stringify(state);
     if (rpfolio) state.rpfolio = rpfolio;
     if (server) state.server = server;
+    // the version sent earlier is now running (or something newer is)
+    if (state.sent && state.server.kind === 'portfolioserver' && !isNewer(state.sent, state.server.version)) {
+        state.sent = null;
+    }
     if (JSON.stringify(state) !== before) {
         console.log(`- rpfolio: ${rpfolioLabel()}; Portfolio server: ${serverLabel()}`);
         events.emit('change', describe());
@@ -73,6 +84,31 @@ async function checkServer() {
         else return error;
     }
     return null;
+}
+
+/**
+ * Asks GitHub for PortfolioServer's latest release (cached; doesn't touch the
+ * Portfolio). The pages hear of it through the usual change event.
+ */
+async function checkLatestRelease() {
+    const latest = await getLatestRelease();
+    const before = JSON.stringify(state.latest);
+    state.latest = latest;
+    if (JSON.stringify(latest) !== before) events.emit('change', describe());
+    return latest;
+}
+
+/** The latest release, if it is newer than the PortfolioServer running. */
+function availableUpdate() {
+    const { latest, server } = state;
+    if (!fullFeatures() || !latest || !isNewer(latest.version, server.version)) return null;
+    return latest;
+}
+
+/** A new SERVER.COM was sent; it runs once PortfolioServer is restarted. */
+function noteServerSent(version) {
+    state.sent = version;
+    events.emit('change', describe());
 }
 
 /** The page stopped PortfolioServer: no server runs until one is started. */
@@ -119,7 +155,7 @@ function rpfolioLabel() {
     if (!found) return 'not found';
     return patch === null
         ? `Transfolio ${version} (original)`
-        : `Transfolio ${version} + PortfolioServer patch ${patch}`;
+        : `Transfolio ${version} (patched)`;
 }
 
 function serverLabel() {
@@ -140,11 +176,19 @@ function describe() {
         server: serverLabel(),
         serverKind: isPatched() ? state.server.kind : 'unknown',
         full: fullFeatures(),
+        // PortfolioServer's latest release, and whether it's newer than the
+        // one running (null if not, or not known)
+        latest: state.latest ? state.latest.version : null,
+        update: availableUpdate() && state.sent !== state.latest.version ? state.latest.version : null,
+        // a newer version is on the Portfolio, waiting for a restart
+        sent: state.sent,
+        releasePage: config.serverReleasePage,
     };
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 module.exports = {
     events, fullFeatures, checkRpfolio, checkServer, noteServerStopped, noteCapabilityError, withFullFeatures, describe,
+    checkLatestRelease, availableUpdate, noteServerSent,
 };
 ///////////////////////////////////////////////////////////////////////////////

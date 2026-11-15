@@ -202,7 +202,12 @@ function connectWebSocket() {
                     showVersions(msg);
                     break;
                 case 'notice':
-                    showStatus(msg.text, 'info');
+                    showStatus(msg.text, msg.kind === 'ok' ? 'ok' : 'info');
+                    // a success note may say what to do next: long enough to read
+                    if (msg.kind === 'ok') {
+                        clearTimeout(statusHideTimer);
+                        statusHideTimer = setTimeout(hideStatus, 10000);
+                    }
                     break;
                 case 'download_progress':
                     handleDownloadProgress(msg);
@@ -1211,6 +1216,18 @@ function showVersions(status) {
     document.getElementById('ver_rpfolio').textContent = status.rpfolio;
     document.getElementById('ver_server').textContent = status.server;
     document.getElementById('server_actions').hidden = !status.full;
+    // PortfolioServer's latest release on GitHub: an Update button when it's
+    // newer than the one running, else a note
+    const update = document.getElementById('server_update');
+    const note = document.getElementById('server_note');
+    update.hidden = !status.update;
+    update.textContent = status.update ? `Update to ${status.update}` : '';
+    update.title = status.update ? `Send PortfolioServer ${status.update} from GitHub to the Portfolio` : '';
+    let noteText = '';
+    if (status.sent) noteText = `${status.sent} sent: press Esc on the Portfolio and start SERVER.COM again`;
+    else if (!status.update && status.latest) noteText = 'up to date';
+    note.textContent = noteText;
+    note.hidden = !noteText;
     // New folder: greyed out unless PortfolioServer is running; hidden while
     // the original rpfolio can't tell
     const newButton = document.getElementById('folder_new');
@@ -1221,12 +1238,20 @@ function showVersions(status) {
     let text = '';
     if (status.patched && (status.serverKind === 'rom' || status.serverKind === 'stopped')) {
         text = 'For folders in the list, file sizes and dates, delete, new folders and free space, '
-            + 'run SERVER.COM on the Portfolio instead of the built-in server.';
+            + 'run SERVER.COM on the Portfolio instead of the built-in server. ';
     } else if (!status.patched && status.rpfolio !== 'not found') {
         text = 'With PortfolioServer (SERVER.COM) on the Portfolio and the rpfolio that supports it, '
-            + 'this page can also show folders, delete files and more.';
+            + 'this page can also show folders, delete files and more. ';
     }
     hint.textContent = text;
+    if (text && status.releasePage) {
+        const link = document.createElement('a');
+        link.href = status.releasePage;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = 'Get SERVER.COM';
+        hint.appendChild(link);
+    }
     hint.hidden = !text;
 }
 
@@ -1243,43 +1268,19 @@ function enableServerControls() {
         if (ok) sendMessage({ command: 'stop_server' });
     });
 
-    // Update: send a new SERVER.COM to C:\SERVER.COM; it takes over once
-    // PortfolioServer is restarted on the Portfolio
-    const fileInput = document.getElementById('server_file');
-    const updateButton = document.getElementById('server_update');
-    updateButton.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', async () => {
-        const file = fileInput.files[0];
-        fileInput.value = '';
-        if (!file) return;
-        if (!/\.com$/i.test(file.name)) {
-            showStatus('PortfolioServer is a .COM file (SERVER.COM)', 'info');
-            return;
-        }
+    // Update: the Pi downloads the new SERVER.COM from GitHub and sends it to
+    // C:\SERVER.COM; it takes over once PortfolioServer is restarted
+    document.getElementById('server_update').addEventListener('click', async () => {
+        const version = serverStatus.update;
+        if (!version) return;
         const ok = await ask({
-            title: 'Update PortfolioServer?',
-            text: `${file.name} (${formatBytes(file.size)}) will replace C:\\SERVER.COM on the Portfolio. `
+            title: `Update PortfolioServer to ${version}?`,
+            text: `The Pi downloads SERVER.COM ${version} from GitHub and sends it to C:\\SERVER.COM on the Portfolio. `
                 + 'Afterwards press Esc on the Portfolio and start SERVER.COM again.',
-            ok: 'Send',
+            ok: 'Update',
         });
-        if (!ok) return;
-        updateButton.disabled = true;
-        showStatus(`Sending ${file.name} to C:\\SERVER.COM…`, 'warn');
-        try {
-            const data = new FormData();
-            data.append('server', file, file.name);
-            const res = await fetch('/update-server', { method: 'POST', body: data });
-            const text = (await res.text()).trim();
-            showStatus(res.ok ? text : `Update failed: ${text}`, res.ok ? 'ok' : 'info');
-            if (res.ok) {
-                // long enough to read
-                clearTimeout(statusHideTimer);
-                statusHideTimer = setTimeout(hideStatus, 10000);
-            }
-        } catch (error) {
-            showStatus('Update failed — check the connection to the Pi', 'info');
-        } finally {
-            updateButton.disabled = false;
+        if (ok && sendMessage({ command: 'update_server' })) {
+            showStatus(`Sending PortfolioServer ${version} to the Portfolio…`, 'warn');
         }
     });
 }

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <!-- ?v= makes browsers fetch the stylesheet again after it changes
          (Safari kept showing an old copy); bump it when styles.css changes -->
-    <link rel="stylesheet" href="styles.css?v=5" type="text/css">
+    <link rel="stylesheet" href="styles.css?v=7" type="text/css">
     <!-- ?v= makes browsers (Safari especially) fetch the icon again after it changes -->
     <link rel="icon" href="favicon.ico?v=2" sizes="16x16 32x32 64x64" />
     <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=2" />
@@ -136,8 +136,9 @@
                 <span>Server: <span id="ver_server">–</span>
                     <span class="footer-actions" id="server_actions" hidden>
                         <button type="button" id="server_stop" class="link-button">Stop</button>
-                        <button type="button" id="server_update" class="link-button">Update…</button>
-                        <input type="file" id="server_file" class="visually-hidden" accept=".com,.COM" tabindex="-1">
+                        <!-- a newer PortfolioServer on GitHub: "Update to 0.5" -->
+                        <button type="button" id="server_update" class="link-button" hidden></button>
+                        <span class="footer-note" id="server_note" hidden></span>
                     </span>
                 </span>
             </p>
@@ -224,8 +225,11 @@
                <code>C:\SERVER</code> at the Portfolio's DOS prompt. The Portfolio doesn't switch
                itself off while it runs, so stop it when you're done: <kbd>Esc</kbd> on the
                Portfolio, or <strong>Stop</strong> at the bottom of this page.
-               <strong>Update…</strong> there sends a new <code>SERVER.COM</code> to
-               <code>C:\</code>; then press <kbd>Esc</kbd> on the Portfolio and start it again.
+               When a newer PortfolioServer is out, <strong>Update to …</strong> appears there:
+               the Pi downloads it from
+               <a href="https://github.com/FutureJames/Atari-Portfolio_Server/releases/latest" target="_blank" rel="noopener">GitHub</a>
+               and sends it to <code>C:\SERVER.COM</code>; then press <kbd>Esc</kbd> on the
+               Portfolio and start it again.
                The bottom of the page shows which server is running; the page notices by itself
                when you switch.</p>
 
@@ -249,6 +253,6 @@
     </dialog>
 
     <div id="conn_status" class="conn-status" role="status" aria-live="polite" hidden></div>
-    <script src="rpf.js?v=3" type="application/javascript"></script>
+    <script src="rpf.js?v=5" type="application/javascript"></script>
 </body>
 </html>

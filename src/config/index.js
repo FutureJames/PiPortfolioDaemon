@@ -44,8 +44,12 @@ const config = {
     rmdirCommand: '<rpfolio> -k <path>',
     freeCommand: '<rpfolio> -s <drive>',
     quitCommand: '<rpfolio> -q',
-    // where "Update PortfolioServer" puts a new SERVER.COM
+    // where updating PortfolioServer puts the new SERVER.COM
     serverComPath: 'C:\\SERVER.COM',
+    // PortfolioServer's latest release on GitHub (the API's answer names its
+    // SERVER.COM), and the release page for people to look at
+    serverReleaseApi: 'https://api.github.com/repos/FutureJames/Atari-Portfolio_Server/releases/latest',
+    serverReleasePage: 'https://github.com/FutureJames/Atari-Portfolio_Server/releases/latest',
     ID: 'Portfolio Folder Daemon',
     // the web app's version, shown on the page
     VERSION: require('../../package.json').version,

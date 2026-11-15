@@ -951,6 +951,15 @@ input[type="submit"]:disabled {
     margin-left: 6px;
 }
 
+.footer-actions [hidden] {
+    display: none;
+}
+
+.footer-note {
+    margin-left: 3px;
+    color: var(--text-muted);
+}
+
 .link-button {
     padding: 0 3px;
     font-size: inherit;
@@ -974,6 +983,17 @@ input[type="submit"]:disabled {
 .footer-hint {
     max-width: 640px;
     margin: 4px auto 0;
+}
+
+.footer-hint a,
+a.link-button {
+    color: var(--link);
+    text-decoration: none;
+}
+
+.footer-hint a:hover,
+a.link-button:hover {
+    text-decoration: underline;
 }
 
 .footer-hint[hidden] {

@@ -53,7 +53,10 @@ const EXIT_NOT_PORTFOLIOSERVER = 3;
 
 let queue = Promise.resolve();
 
-// runs fn after every command queued before it has finished
+// runs fn after every command queued before it has finished. Also used for
+// network requests (see serverRelease.js): on a Pi Zero, an HTTPS request
+// running alongside rpfolio upsets rpfolio's timing on the parallel port, and
+// the Portfolio then seems not to answer.
 function enqueue(fn) {
     const run = queue.then(fn, fn);
     queue = run.catch(() => {});
@@ -590,7 +593,7 @@ const isPortfolioFolder = (folder) => typeof folder === 'string' && PORTFOLIO_FO
 
 ///////////////////////////////////////////////////////////////////////////////
 module.exports = {
-    isDosName, isPortfolioFolder,
+    isDosName, isPortfolioFolder, runExclusive: enqueue,
     PortfolioError, runPortfolioCommand, getDirListFromPortfolio, folderExists,
     receiveFileFromPortfolio, receiveAllFromPortfolio, transmitFileToPortfolio,
     getLongDirList, folderExistsLong, getServerInfo, getFreeSpace,

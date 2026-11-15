@@ -255,22 +255,22 @@ Click the **?** button on the page for the same instructions.
 
 ## Optional: PortfolioServer
 
-PortfolioServer (`SERVER.COM`) is a small DOS program that replaces the Portfolio's built-in file transfer server. It understands everything the built-in server does, so the page works as before, and it adds commands the built-in server lacks. With PortfolioServer running and the `rpfolio` with [`rpfolio-portfolioserver.patch`](extras/rpfolio-portfolioserver.patch) on the Pi, the page also:
+[PortfolioServer](https://github.com/FutureJames/Atari-Portfolio_Server) (`SERVER.COM`) is a small DOS program that replaces the Portfolio's built-in file transfer server. It understands everything the built-in server does, so the page works as before, and it adds commands the built-in server lacks. With PortfolioServer running and the `rpfolio` with [`rpfolio-portfolioserver.patch`](extras/rpfolio-portfolioserver.patch) on the Pi, the page also:
 
 - lists **folders** first, with a folder icon — click one to open it;
 - shows each file's **size and date**, and **hidden** (`h`) and **system** (`s`) files, dimmed: the Portfolio won't send those, so they can't be downloaded, but they can be deleted;
 - has a **delete** button on each file (and on each empty folder), confirmed every time, since it can't be undone; read-only files (`r`) can't be deleted;
 - has a **New folder** button next to **Open**;
 - shows the drive's **free space** under the drive toggle, and warns before an upload that won't fit;
-- can **stop** PortfolioServer and **update** it, from the links in the footer.
+- can **stop** PortfolioServer, and **update** it to the latest release from GitHub, from the footer.
 
 The page notices by itself when you switch servers or `rpfolio` builds: it checks on every page load, after an error, and whenever the Portfolio comes back. Under the built-in server the extra features disappear and the footer says how to get them.
 
-**Installing it.** With the Portfolio in its built-in server mode, upload `SERVER.COM` to `C:\` with the page. Then on the Portfolio press **Esc** to leave server mode, and at the DOS prompt type `C:\SERVER` and press **Enter**. **Esc** stops PortfolioServer again.
+**Installing it.** Download `SERVER.COM` from the [PortfolioServer releases](https://github.com/FutureJames/Atari-Portfolio_Server/releases/latest) (the page links there too, with **Get SERVER.COM** at the bottom). With the Portfolio in its built-in server mode, upload `SERVER.COM` to `C:\` with the page. Then on the Portfolio press **Esc** to leave server mode, and at the DOS prompt type `C:\SERVER` and press **Enter**. **Esc** stops PortfolioServer again.
 
 **Batteries.** While PortfolioServer runs, the Portfolio doesn't switch itself off, so stop it when you're done (press **Esc** on the Portfolio, or **Stop** in the page's footer). The page never stops or starts it by itself.
 
-**Updating it.** Click **Update…** in the footer and choose the new `SERVER.COM`. It replaces `C:\SERVER.COM` (PortfolioServer can overwrite itself while it runs); then press **Esc** on the Portfolio and start `C:\SERVER` again.
+**Updating it.** On each page load the Pi asks GitHub for PortfolioServer's latest release. The footer then says *up to date*, or shows **Update to 0.5** (for example) when the release is newer than the PortfolioServer running. Click it and confirm: the Pi downloads the release's `SERVER.COM` and sends it to `C:\SERVER.COM` (PortfolioServer can overwrite itself while it runs). Then press **Esc** on the Portfolio and start `C:\SERVER` again. This needs the Pi to be online; without internet access, the footer just doesn't offer updates. To install a build of your own instead, upload it to `C:\` like any other file.
 
 ---
 
@@ -290,7 +290,7 @@ The log shows each page load, folder change and transfer:
 Portfolio Folder Daemon 1.1.0
 -> c:\
 
-- rpfolio: Transfolio 1.0 + PortfolioServer patch 1; Portfolio server: PortfolioServer 0.4
+- rpfolio: Transfolio 1.0 (patched); Portfolio server: PortfolioServer 0.4
 - web page was loaded
 - setting Portfolio folder: c:\
 - uploading NOTES.TXT to Portfolio ✅
@@ -313,6 +313,7 @@ Settings are in [`src/config/index.js`](src/config/index.js):
 | `portfolioStallTimeout` | `15000` | How long (ms) a transfer may go without progress before it counts as stopped part-way. A transfer that keeps moving is never cut off |
 | `portfolioRetryInterval` | `15000` | While the Portfolio isn't answering and a page is open, how often (ms) to check whether it's back |
 | `rpfolio` | `rpfolio` | The `rpfolio` program to run. The `RPFOLIO` environment variable overrides it, e.g. to try another build |
+| `serverReleaseApi`, `serverReleasePage` | PortfolioServer's GitHub releases | Where the page looks for PortfolioServer updates, and the release page it links to; change both to use a fork |
 
 To use another port with the service, add a line under `[Service]` in `/etc/systemd/system/piportfolio.service`, for example `Environment=PORT=3000`, then run `sudo systemctl daemon-reload && sudo systemctl restart piportfolio`.
 
