@@ -21,8 +21,8 @@ fs.mkdirSync(config.sharedFolder, { recursive: true });
 if (!doesPathExists(config.tmpFolder)) {
     throw new Error(`tmpFolder does not exist: ${config.tmpFolder}`);
 }
-if (!isCommandAvailable('rpfolio')) {
-    throw new Error('rpfolio command not found!');
+if (!isCommandAvailable(config.rpfolio)) {
+    throw new Error(`rpfolio command not found: ${config.rpfolio}`);
 }
 if (!isCommandAvailable('stdbuf')) {
     throw new Error('stdbuf command not found (part of coreutils)!');
@@ -45,6 +45,11 @@ const server = app.listen(PORT, () => {
     
     setupWebSockets(server);
     setupDaemon();
+    // which rpfolio, and (with the patched one) which Portfolio server
+    const capabilities = require('./src/utils/capabilities');
+    capabilities.checkRpfolio()
+        .then(() => capabilities.checkServer())
+        .catch(error => console.error('- checking rpfolio failed', error));
 });
 
 server.on('error', (error) => {

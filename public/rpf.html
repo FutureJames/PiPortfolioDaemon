@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <!-- ?v= makes browsers fetch the stylesheet again after it changes
          (Safari kept showing an old copy); bump it when styles.css changes -->
-    <link rel="stylesheet" href="styles.css?v=2" type="text/css">
+    <link rel="stylesheet" href="styles.css?v=4" type="text/css">
     <!-- ?v= makes browsers (Safari especially) fetch the icon again after it changes -->
     <link rel="icon" href="favicon.ico?v=2" sizes="16x16 32x32 64x64" />
     <link rel="icon" type="image/png" sizes="64x64" href="favicon.png?v=2" />
@@ -36,6 +36,9 @@
                     </div>
                 </div>
 
+                <!-- PortfolioServer only: the drive's free space -->
+                <p class="free-space" id="free_space" aria-live="polite" hidden></p>
+
                 <div class="folder-row">
                     <label for="current_folder" class="path-field">
                         <span class="visually-hidden">Directory</span>
@@ -45,6 +48,15 @@
                                spellcheck="false" autocomplete="off" autocapitalize="characters">
                     </label>
                     <button type="button" id="folder_open" class="button-secondary">Open</button>
+                    <!-- PortfolioServer only; greyed out with the built-in server -->
+                    <button type="button" id="folder_new" class="button-secondary folder-new" hidden
+                            aria-label="New folder" title="New folder">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                            <path d="M12 10.5v5M9.5 13h5"/>
+                        </svg>
+                    </button>
                 </div>
 
                 <div class="dir-panel">
@@ -115,7 +127,42 @@
                 <textarea id="log" name="log" readonly="readonly"></textarea>
             </section>
         </main>
+
+        <!-- versions of the web app, rpfolio and the Portfolio's server -->
+        <footer class="app-footer" id="app_footer">
+            <p class="footer-versions">
+                <span>Web app <span id="ver_app">–</span></span>
+                <span>rpfolio: <span id="ver_rpfolio">–</span></span>
+                <span>Server: <span id="ver_server">–</span>
+                    <span class="footer-actions" id="server_actions" hidden>
+                        <button type="button" id="server_stop" class="link-button">Stop</button>
+                        <button type="button" id="server_update" class="link-button">Update…</button>
+                        <input type="file" id="server_file" class="visually-hidden" accept=".com,.COM" tabindex="-1">
+                    </span>
+                </span>
+            </p>
+            <p class="footer-hint" id="server_hint" hidden></p>
+        </footer>
     </div>
+
+    <!-- questions: confirm a delete, name a new folder -->
+    <dialog id="ask_dialog" class="ask-dialog" aria-labelledby="ask_title">
+        <form method="dialog">
+            <h2 id="ask_title"></h2>
+            <p id="ask_text"></p>
+            <label class="ask-field" id="ask_field" hidden>
+                <span class="visually-hidden" id="ask_label"></span>
+                <span class="path-prefix" id="ask_prefix"></span>
+                <input type="text" id="ask_input" spellcheck="false" autocomplete="off"
+                       autocapitalize="characters" maxlength="12">
+            </label>
+            <p class="ask-error" id="ask_error" role="alert"></p>
+            <div class="ask-actions">
+                <button type="button" id="ask_cancel" class="button-secondary">Cancel</button>
+                <button type="submit" id="ask_ok" value="ok">OK</button>
+            </div>
+        </form>
+    </dialog>
     <dialog id="help_dialog" class="help-dialog" aria-labelledby="help_title">
         <div class="help-header">
             <h2 id="help_title">How to use</h2>
@@ -137,8 +184,9 @@
                page switches back to <code>C:\</code>.</p>
 
             <h3>Folders</h3>
-            <p>The Portfolio doesn't report folders in its listings, so open one by typing its
-               name in the directory field, e.g. <code>GAMES</code> or <code>GAMES\SAVES</code>,
+            <p>With PortfolioServer (see below), folders are listed first, with a folder icon:
+               click one to open it. The built-in server doesn't report folders in its listings,
+               so there open one by typing its name in the directory field, e.g. <code>GAMES</code> or <code>GAMES\SAVES</code>,
                and pressing <kbd>Enter</kbd> or <strong>Open</strong>. Leave it blank for the
                drive's root. <strong>↰&nbsp;..</strong> at the top of the list goes up one level.
                If the folder doesn't exist, the activity log shows ❌ (folder not found)
@@ -163,8 +211,26 @@
                activity log shows ❌ with the reason and the file is discarded; just upload
                it again.</p>
 
+            <h3>PortfolioServer</h3>
+            <p>PortfolioServer (<code>SERVER.COM</code>) replaces the Portfolio's built-in server.
+               With it running, and the matching <code>rpfolio</code> on the Pi, the list also shows
+               folders, each file's size and date, and hidden (<code>h</code>) and system
+               (<code>s</code>) files, dimmed: those can't be downloaded. The bin button at the end
+               of a row deletes that file, or an empty folder, after asking each time; read-only
+               files (<code>r</code>) can't be deleted. The folder button next to
+               <strong>Open</strong> makes a new folder. The drive's free space shows under the drive
+               toggle, and the page warns before an upload that won't fit.</p>
+            <p>To start it, leave the built-in server with <kbd>Esc</kbd> and type
+               <code>C:\SERVER</code> at the Portfolio's DOS prompt. The Portfolio doesn't switch
+               itself off while it runs, so stop it when you're done: <kbd>Esc</kbd> on the
+               Portfolio, or <strong>Stop</strong> at the bottom of this page.
+               <strong>Update…</strong> there sends a new <code>SERVER.COM</code> to
+               <code>C:\</code>; then press <kbd>Esc</kbd> on the Portfolio and start it again.
+               The bottom of the page shows which server is running; the page notices by itself
+               when you switch.</p>
+
             <h3>Activity</h3>
-            <p>Lists uploads (⬆️), downloads (⬇️) and folder changes (📁), with ✅ or ❌ for
+            <p>Lists uploads (⬆️), downloads (⬇️), deletes (🗑️) and folder changes (📁), with ✅ or ❌ for
                each one (❌ with the reason, such as a folder that wasn't found). It is shared by everyone using this page and kept until the
                server restarts. <strong>Clear</strong> empties it for everyone.</p>
 
@@ -183,6 +249,6 @@
     </dialog>
 
     <div id="conn_status" class="conn-status" role="status" aria-live="polite" hidden></div>
-    <script src="rpf.js" type="application/javascript"></script>
+    <script src="rpf.js?v=3" type="application/javascript"></script>
 </body>
 </html>

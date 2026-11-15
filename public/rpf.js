@@ -28,6 +28,8 @@ if (typeof window.WebSocket === 'undefined') {
 enableDropZone();
 enableHelp();
 enableDownloadAll();
+enableAskDialog();
+enableServerControls();
 
 ///////////////////////////////////////////////////////////////////////////////
 // Help panel: opens from the Activity header; closes with Close, Esc
@@ -196,6 +198,12 @@ function connectWebSocket() {
                     populateFileList(msg);
                     portfolioAnswering();
                     break;
+                case 'status':
+                    showVersions(msg);
+                    break;
+                case 'notice':
+                    showStatus(msg.text, 'info');
+                    break;
                 case 'download_progress':
                     handleDownloadProgress(msg);
                     break;
@@ -250,6 +258,7 @@ function initializeInputEvents() {
         }
     });
     document.getElementById('folder_open').addEventListener('click', openFolder);
+    document.getElementById('folder_new').addEventListener('click', newFolder);
     document.getElementById('dir_up').addEventListener('click', goUp);
 
     options.forEach((option, i) => {
@@ -336,7 +345,9 @@ function showDrive(drive) {
 function clearFileList() {
     const fileList = document.getElementById('file_list');
     fileList.innerHTML = '';
+    listing = { entries: [], full: false };
     showDownloadAll(false);
+    showFreeSpace(null);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -398,27 +409,141 @@ function startListLoading() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// lists all the files for the folder; `missing` means the folder doesn't
-// exist on the Portfolio (shown as "Folder not found" instead of "No files"),
-// `nocard` that the A: memory card is out (shown as "No card in A:\")
-function populateFileList({ files = [], missing = false, nocard = false } = {}) {
+// The folder's listing. With the built-in server (or the original rpfolio)
+// it has only the file names. With PortfolioServer (`full`) it has folders
+// too, listed first (clicking one opens it), and each entry's size, date and
+// attributes; hidden and system files are shown dimmed and can't be
+// downloaded (the Portfolio won't send them), and each entry has a delete
+// button. `missing` means the folder doesn't exist on the Portfolio (shown as
+// "Folder not found" instead of "No files"), `nocard` that the A: memory card
+// is out (shown as "No card in A:\").
+let listing = { entries: [], full: false };
+
+// files that can be downloaded (all of them, without the details)
+function downloadableFiles() {
+    return listing.entries.filter(e => !e.folder && !e.hidden && !e.system);
+}
+
+const FOLDER_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">'
+    + '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2h8.8A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>';
+const TRASH_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"'
+    + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+
+// "2005-01-01" -> "1 Jan 2005"
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatDate(date) {
+    const [y, m, d] = date.split('-').map(Number);
+    return `${d} ${MONTHS[m - 1] || '?'} ${y}`;
+}
+
+function populateFileList({ entries, files = [], full = false, free = null, missing = false, nocard = false } = {}) {
     setListLoading(false);
     const container = document.getElementById('dir_container');
     container.classList.toggle('is-missing', missing === true);
     container.classList.toggle('is-nocard', nocard === true);
+    container.classList.toggle('is-full', full === true);
     const fileList = document.getElementById('file_list');
     fileList.innerHTML = '';
-    if (files === false) return;
-    showDownloadAll(files.length > 0);
-    files.forEach(file => {
-        const listItem = document.createElement('li');
-        const link = document.createElement('a');
-        link.href = `/download/${encodeURIComponent(file)}`;
-        link.textContent = file;
-        link.addEventListener('click', downloadFile);
-        listItem.appendChild(link);
-        fileList.appendChild(listItem);
+    // an older server sends just the names
+    listing = { entries: entries || files.map(name => ({ name })), full: full === true };
+    showFreeSpace(free);
+    showDownloadAll(downloadableFiles().length > 0);
+    listing.entries.forEach(entry => fileList.appendChild(full ? fullRow(entry) : plainRow(entry.name)));
+}
+
+// a file name that downloads the file (the built-in server's listing)
+function plainRow(name) {
+    const listItem = document.createElement('li');
+    const link = downloadLink(name);
+    link.textContent = name;
+    listItem.appendChild(link);
+    return listItem;
+}
+
+function downloadLink(name) {
+    const link = document.createElement('a');
+    link.className = 'entry-main';
+    link.href = `/download/${encodeURIComponent(name)}`;
+    link.dataset.name = name;
+    link.addEventListener('click', downloadFile);
+    return link;
+}
+
+// a row of PortfolioServer's listing: name, size, date, delete button
+function fullRow(entry) {
+    const listItem = document.createElement('li');
+    listItem.className = 'entry';
+    const marks = [entry.readonly && 'r', entry.hidden && 'h', entry.system && 's'].filter(Boolean);
+    let main;
+    if (entry.folder) {
+        listItem.classList.add('is-folder');
+        main = document.createElement('button');
+        main.type = 'button';
+        main.className = 'entry-main';
+        main.title = `Open ${entry.name}`;
+        main.addEventListener('click', () => openSubfolder(entry.name));
+    } else if (entry.hidden || entry.system) {
+        // the Portfolio treats these as missing when asked for them
+        listItem.classList.add('is-hidden');
+        main = document.createElement('span');
+        main.className = 'entry-main';
+        main.title = `${entry.hidden ? 'Hidden' : 'System'} file: the Portfolio won’t send it, so it can’t be downloaded`;
+    } else {
+        main = downloadLink(entry.name);
+    }
+    if (entry.folder) main.insertAdjacentHTML('beforeend', `<span class="entry-icon">${FOLDER_ICON}</span>`);
+    const name = document.createElement('span');
+    name.className = 'entry-name';
+    name.textContent = entry.name;
+    main.appendChild(name);
+    marks.forEach(mark => {
+        const badge = document.createElement('span');
+        badge.className = 'entry-mark';
+        badge.textContent = mark;
+        badge.title = { r: 'read-only', h: 'hidden', s: 'system' }[mark];
+        main.appendChild(badge);
     });
+    const size = document.createElement('span');
+    size.className = 'entry-size';
+    size.textContent = entry.folder ? '' : formatBytes(entry.size);
+    const date = document.createElement('span');
+    date.className = 'entry-date';
+    date.textContent = formatDate(entry.date);
+    date.title = `${entry.date} ${entry.time}`;
+    main.append(size, date);
+    listItem.appendChild(main);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'entry-delete';
+    remove.innerHTML = TRASH_ICON;
+    const what = entry.folder ? `folder ${entry.name}` : entry.name;
+    remove.title = `Delete ${what}`;
+    remove.setAttribute('aria-label', `Delete ${what}`);
+    remove.addEventListener('click', () => (entry.folder ? askRemoveFolder(entry) : askDeleteFile(entry)));
+    listItem.appendChild(remove);
+    return listItem;
+}
+
+// opens a folder shown in the list
+function openSubfolder(name) {
+    const parts = [...pathParts(currentPath), name];
+    if (sendFolder(currentPath + name + '\\')) {
+        document.getElementById('current_folder').value = parts.join('\\');
+    }
+}
+
+// "C: 22,016 of 31,232 bytes free" under the drive toggle (PortfolioServer only)
+let freeSpace = null;
+function showFreeSpace(free) {
+    freeSpace = free;
+    const el = document.getElementById('free_space');
+    el.hidden = !free;
+    if (!free) return;
+    const n = (bytes) => bytes.toLocaleString('en-US');
+    el.textContent = `${free.drive.slice(0, 2).toUpperCase()} ${n(free.free)} of ${n(free.total)} bytes free`;
+    el.classList.toggle('is-low', free.free < 4096);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -462,7 +587,7 @@ async function downloadFile(event) {
     event.preventDefault();
     const link = event.currentTarget;
     if (link.classList.contains('is-downloading')) return;
-    const name = link.textContent;
+    const name = link.dataset.name;
     link.classList.add('is-downloading');
     link.dataset.progress = 'Waiting…';
     link.style.setProperty('--progress', '0%');
@@ -503,30 +628,59 @@ async function downloadFile(event) {
 // button sits in the lower right of the file list and only shows when the
 // list has files. The page names the folder, so the server sends the one
 // the user is looking at. While it runs, the button fills like a pie chart:
-// each file is an equal share (the other files' sizes aren't known ahead).
+// each file is an equal share, or, with PortfolioServer's listing (which
+// gives every file's size), its share of the bytes.
+const DOWNLOAD_ALL_TITLE = 'Download all files in this folder (.zip)';
+
 function showDownloadAll(show) {
     const button = document.getElementById('download_all');
     // keep a running download's button visible until it finishes
     if (!show && button.classList.contains('is-busy')) return;
     button.hidden = !show;
     button.parentElement.classList.toggle('has-download-all', show);
+    if (button.classList.contains('is-busy')) return;
+    const files = downloadableFiles();
+    if (show && listing.full) {
+        const bytes = files.reduce((sum, file) => sum + file.size, 0);
+        const plural = files.length === 1 ? '' : 's';
+        button.title = `Download ${files.length === 1 ? 'the' : `all ${files.length}`} file${plural} in this folder`
+            + ` (${formatBytes(bytes)}) as a .zip`;
+    } else {
+        button.title = DOWNLOAD_ALL_TITLE;
+    }
 }
 
 function enableDownloadAll() {
     const button = document.getElementById('download_all');
     const label = button.getAttribute('aria-label');
-    const idleTitle = button.title;
     const busyText = 'Downloading all files…';
     button.addEventListener('click', async () => {
         if (button.classList.contains('is-busy')) return;
         const folder = currentPath;
+        // with PortfolioServer: each file's size, to share the progress by bytes
+        const sizes = new Map(listing.full ? downloadableFiles().map(f => [f.name.toUpperCase(), f.size]) : []);
+        const totalBytes = [...sizes.values()].reduce((sum, size) => sum + size, 0);
+        let doneBytes = 0;          // bytes of the files already received
+        let lastIndex = 0;
+        let lastSize = 0;
         button.classList.add('is-busy');
         button.style.setProperty('--progress', '0%');
         button.setAttribute('aria-label', busyText);
         button.title = `${busyText} (about 1.5 KB a second)`;
         const download = newDownload((progress) => {
             const { file, index, count } = progress;
-            const overall = count ? (index - 1 + fileFraction(progress)) / count : fileFraction(progress);
+            if (index !== lastIndex) {
+                if (lastIndex) doneBytes += lastSize;
+                lastIndex = index;
+            }
+            lastSize = progress.size || 0;
+            let overall;
+            if (totalBytes > 0 && sizes.has(file.toUpperCase())) {
+                overall = (doneBytes + progress.received) / totalBytes;
+            } else {
+                overall = count ? (index - 1 + fileFraction(progress)) / count : fileFraction(progress);
+            }
+            overall = Math.min(1, overall);
             button.style.setProperty('--progress', `${overall * 100}%`);
             const of = count ? ` of ${count}` : '';
             const text = `Downloading file ${index}${of}: ${file}, ${describeDownload(progress)}`;
@@ -559,9 +713,8 @@ function enableDownloadAll() {
             button.classList.remove('is-busy');
             button.style.removeProperty('--progress');
             button.setAttribute('aria-label', label);
-            button.title = idleTitle;
             // the list may have changed meanwhile
-            showDownloadAll(document.querySelectorAll('#file_list li').length > 0);
+            showDownloadAll(downloadableFiles().length > 0);
         }
     });
 }
@@ -752,6 +905,24 @@ function abandonUploads() {
     finishUploadsIfDone();
 }
 
+// With PortfolioServer the free space is known: warn before an upload that
+// won't fit (files of the same names are replaced, so their space counts as
+// free). DOS stores files in whole clusters, so this is a little generous.
+async function roomFor(files) {
+    if (!freeSpace || !listing.full || freeSpace.drive !== currentDrive) return true;
+    const replaced = new Map(listing.entries.filter(e => !e.folder).map(e => [e.name.toUpperCase(), e.size]));
+    const needed = files.reduce((sum, file) => sum + file.size - (replaced.get(file.name.toUpperCase()) || 0), 0);
+    if (needed <= freeSpace.free) return true;
+    const drive = currentDrive.toUpperCase();
+    const ok = await ask({
+        title: 'Not enough space',
+        text: `${files.length === 1 ? files[0].name : `These ${files.length} files`} need ${formatBytes(needed)}, `
+            + `but ${drive} has only ${formatBytes(freeSpace.free)} free. Upload anyway?`,
+        ok: 'Upload anyway',
+    });
+    return ok === true;
+}
+
 // Upload box: files dropped on it are sent straight away; Choose files +
 // Upload does the same for touch screens and keyboards. Several files can
 // be sent at once. Uploads go in the background (no page reload); the
@@ -816,6 +987,7 @@ function enableDropZone() {
             showStatus('Please wait for the current upload to finish', 'info');
             return;
         }
+        if (!(await roomFor(files))) return;
         uploading = true;
         dropZone.classList.add('is-uploading');
         hint.textContent = `Uploading ${files.length === 1 ? files[0].name : files.length + ' files'}…`;
@@ -897,6 +1069,219 @@ function enableDropZone() {
     });
 
     showSelection('');
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Questions in a small dialog: confirm a delete, name a new folder.
+// ask() resolves with true (or the text typed) on OK, null on Cancel or Esc.
+
+let askResolve = null;
+let askValidate = null;
+
+function enableAskDialog() {
+    const dialog = document.getElementById('ask_dialog');
+    const input = document.getElementById('ask_input');
+    const error = document.getElementById('ask_error');
+    dialog.querySelector('form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        let answer = true;
+        if (!document.getElementById('ask_field').hidden) {
+            answer = input.value.trim();
+            const problem = askValidate ? askValidate(answer) : '';
+            if (problem) {
+                error.textContent = problem;
+                input.focus();
+                return;
+            }
+        }
+        finishAsk(answer);
+    });
+    document.getElementById('ask_cancel').addEventListener('click', () => finishAsk(null));
+    // Esc closes the dialog by itself
+    dialog.addEventListener('close', () => finishAsk(null));
+    dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) finishAsk(null);   // the backdrop area
+    });
+    input.addEventListener('input', () => { error.textContent = ''; });
+}
+
+function finishAsk(answer) {
+    const dialog = document.getElementById('ask_dialog');
+    const resolve = askResolve;
+    askResolve = null;
+    if (dialog.open) dialog.close();
+    if (resolve) resolve(answer);
+}
+
+/**
+ * @param {object} question - { title, text, ok: button label, danger: red OK
+ *   button, input: { label, prefix, validate(text) -> problem or '' } }
+ * @returns {Promise<true|string|null>}
+ */
+function ask({ title, text, ok = 'OK', danger = false, input = null }) {
+    finishAsk(null);        // only one question at a time
+    const dialog = document.getElementById('ask_dialog');
+    document.getElementById('ask_title').textContent = title;
+    document.getElementById('ask_text').textContent = text || '';
+    document.getElementById('ask_text').hidden = !text;
+    document.getElementById('ask_error').textContent = '';
+    const okButton = document.getElementById('ask_ok');
+    okButton.textContent = ok;
+    okButton.classList.toggle('is-danger', danger);
+    const field = document.getElementById('ask_field');
+    field.hidden = !input;
+    askValidate = input ? input.validate : null;
+    const textBox = document.getElementById('ask_input');
+    if (input) {
+        document.getElementById('ask_label').textContent = input.label;
+        document.getElementById('ask_prefix').textContent = input.prefix || '';
+        textBox.value = '';
+    }
+    return new Promise((resolve) => {
+        askResolve = resolve;
+        dialog.showModal();
+        (input ? textBox : document.getElementById('ask_cancel')).focus();
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// File management (PortfolioServer only). Every delete is confirmed, one file
+// at a time: it can't be undone. The server logs the result and lists the
+// folder again.
+
+// a DOS name: up to 8 characters, optionally a dot and up to 3 more
+const DOS_NAME = /^[A-Za-z0-9_$~!#%&'()@^{}-]{1,8}(\.[A-Za-z0-9_$~!#%&'()@^{}-]{1,3})?$/;
+
+async function askDeleteFile(entry) {
+    const where = currentPath.toUpperCase();
+    const ok = await ask({
+        title: `Delete ${entry.name}?`,
+        text: `${where}${entry.name} (${formatBytes(entry.size)}) will be deleted from the Portfolio. This can’t be undone.`
+            + (entry.readonly ? ' It is read-only, so the Portfolio will probably refuse.' : ''),
+        ok: 'Delete',
+        danger: true,
+    });
+    if (ok) sendMessage({ command: 'delete_file', folder: currentPath, name: entry.name });
+}
+
+async function askRemoveFolder(entry) {
+    const where = currentPath.toUpperCase();
+    const ok = await ask({
+        title: `Remove folder ${entry.name}?`,
+        text: `${where}${entry.name} will be removed from the Portfolio. Only an empty folder can be removed:`
+            + ' delete the files in it first.',
+        ok: 'Remove',
+        danger: true,
+    });
+    if (ok) sendMessage({ command: 'remove_folder', folder: currentPath, name: entry.name });
+}
+
+async function newFolder() {
+    if (!serverStatus.full) return;
+    const where = currentPath.toUpperCase();
+    const taken = new Set(listing.entries.map(e => e.name.toUpperCase()));
+    const name = await ask({
+        title: 'New folder',
+        ok: 'Make folder',
+        input: {
+            label: 'Folder name',
+            prefix: where,
+            validate: (text) => {
+                if (!text) return 'Type a name for the folder';
+                if (!DOS_NAME.test(text)) return 'Up to 8 letters or digits, optionally a dot and 3 more (e.g. GAMES)';
+                if (taken.has(text.toUpperCase())) return 'There is already a file or folder of that name';
+                return '';
+            },
+        },
+    });
+    if (name) sendMessage({ command: 'make_folder', folder: currentPath, name: name.toUpperCase() });
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Footer: the web app's version, rpfolio's, and the Portfolio's server. The
+// server sends them on page load and whenever they change (the user can
+// switch servers on the Portfolio, or swap rpfolio, at any time). The
+// PortfolioServer features (New folder, Stop, Update) follow them.
+
+let serverStatus = { full: false };
+
+function showVersions(status) {
+    serverStatus = status;
+    document.getElementById('ver_app').textContent = status.app;
+    document.getElementById('ver_rpfolio').textContent = status.rpfolio;
+    document.getElementById('ver_server').textContent = status.server;
+    document.getElementById('server_actions').hidden = !status.full;
+    // New folder: greyed out unless PortfolioServer is running; hidden while
+    // the original rpfolio can't tell
+    const newButton = document.getElementById('folder_new');
+    newButton.hidden = !status.patched;
+    newButton.disabled = !status.full;
+    newButton.title = status.full ? 'New folder' : 'New folder (needs PortfolioServer on the Portfolio)';
+    const hint = document.getElementById('server_hint');
+    let text = '';
+    if (status.patched && (status.serverKind === 'rom' || status.serverKind === 'stopped')) {
+        text = 'For folders in the list, file sizes and dates, delete, new folders and free space, '
+            + 'run SERVER.COM on the Portfolio instead of the built-in server.';
+    } else if (!status.patched && status.rpfolio !== 'not found') {
+        text = 'With PortfolioServer (SERVER.COM) on the Portfolio and the rpfolio that supports it, '
+            + 'this page can also show folders, delete files and more.';
+    }
+    hint.textContent = text;
+    hint.hidden = !text;
+}
+
+function enableServerControls() {
+    document.getElementById('server_stop').addEventListener('click', async () => {
+        const ok = await ask({
+            title: 'Stop PortfolioServer?',
+            text: 'The Portfolio goes back to DOS and this page can’t reach it until a server is started on it again. '
+                + 'While PortfolioServer runs, the Portfolio doesn’t switch itself off, so stop it when you’re done '
+                + 'to save the batteries.',
+            ok: 'Stop',
+            danger: true,
+        });
+        if (ok) sendMessage({ command: 'stop_server' });
+    });
+
+    // Update: send a new SERVER.COM to C:\SERVER.COM; it takes over once
+    // PortfolioServer is restarted on the Portfolio
+    const fileInput = document.getElementById('server_file');
+    const updateButton = document.getElementById('server_update');
+    updateButton.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+        const file = fileInput.files[0];
+        fileInput.value = '';
+        if (!file) return;
+        if (!/\.com$/i.test(file.name)) {
+            showStatus('PortfolioServer is a .COM file (SERVER.COM)', 'info');
+            return;
+        }
+        const ok = await ask({
+            title: 'Update PortfolioServer?',
+            text: `${file.name} (${formatBytes(file.size)}) will replace C:\\SERVER.COM on the Portfolio. `
+                + 'Afterwards press Esc on the Portfolio and start SERVER.COM again.',
+            ok: 'Send',
+        });
+        if (!ok) return;
+        updateButton.disabled = true;
+        showStatus(`Sending ${file.name} to C:\\SERVER.COM…`, 'warn');
+        try {
+            const data = new FormData();
+            data.append('server', file, file.name);
+            const res = await fetch('/update-server', { method: 'POST', body: data });
+            const text = (await res.text()).trim();
+            showStatus(res.ok ? text : `Update failed: ${text}`, res.ok ? 'ok' : 'info');
+            if (res.ok) {
+                // long enough to read
+                clearTimeout(statusHideTimer);
+                statusHideTimer = setTimeout(hideStatus, 10000);
+            }
+        } catch (error) {
+            showStatus('Update failed — check the connection to the Pi', 'info');
+        } finally {
+            updateButton.disabled = false;
+        }
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////

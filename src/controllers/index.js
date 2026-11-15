@@ -5,12 +5,12 @@ const path = require('path');
 const fs = require('fs');
 
 const config = require('../config');
-const { receiveFileFromPortfolio, receiveAllFromPortfolio } = require('../utils');
+const { receiveFileFromPortfolio, receiveAllFromPortfolio, transmitFileToPortfolio, isPortfolioFolder } = require('../utils');
+const capabilities = require('../utils/capabilities');
 const { createZip } = require('../utils/zip');
-const { sendToActivityLog, sendPortfolioError, notePortfolioResult, sendDownloadProgress } = require('../websockets');
-
-const multer  = require('multer');
-const upload = multer({ dest: config.sharedFolder });
+const {
+  sendToActivityLog, sendPortfolioError, notePortfolioResult, sendDownloadProgress, getKnownSizes, refreshFolder,
+} = require('../websockets');
 
 ///////////////////////////////////////////////////////////////////////////////
 /**
@@ -77,7 +77,8 @@ const downloadFile = async (req, res) => {
 
   // runs in the background (the server keeps answering meanwhile) and lands
   // in a temporary folder of its own, removed afterwards
-  const result = await receiveFileFromPortfolio(fileName, downloadProgress(req));
+  // with PortfolioServer the listing gave the exact size
+  const result = await receiveFileFromPortfolio(fileName, downloadProgress(req), getKnownSizes(config.portfolioPath));
   if (!result.ok) {
     const { reason, kind } = result.error;
     console.log(`- downloading ${fileName} from Portfolio \u{274c} ${reason}`);
@@ -114,11 +115,6 @@ const uploadFile = (req, res) => {
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-// A Portfolio folder: drive A: or C:, then DOS names (up to 8 characters,
-// optionally a dot and up to 3 more), each followed by a backslash
-const DOS_NAME = "[A-Za-z0-9_$~!#%&'()@^{}-]{1,8}(?:\\.[A-Za-z0-9_$~!#%&'()@^{}-]{1,3})?";
-const PORTFOLIO_FOLDER = new RegExp(`^[ac]:\\\\(?:${DOS_NAME}\\\\)*$`, 'i');
 
 /**
  * Sends every file in a Portfolio folder as one .zip, e.g. GAMES.zip, or
@@ -129,7 +125,8 @@ const PORTFOLIO_FOLDER = new RegExp(`^[ac]:\\\\(?:${DOS_NAME}\\\\)*$`, 'i');
  */
 const downloadAllFiles = async (req, res) => {
   const folder = String(req.query.folder || '');
-  if (!PORTFOLIO_FOLDER.test(folder)) {
+  // a Portfolio folder on A: or C: (see isPortfolioFolder)
+  if (!isPortfolioFolder(folder)) {
     return res.status(400).type('text/plain').send('Invalid folder.');
   }
   const parts = folder.slice(3).split('\\').filter(Boolean);
@@ -138,7 +135,7 @@ const downloadAllFiles = async (req, res) => {
 
   // one rpfolio command for the whole folder, in the background like any
   // other transfer; lands in a temporary folder of its own
-  const result = await receiveAllFromPortfolio(folder, downloadProgress(req));
+  const result = await receiveAllFromPortfolio(folder, downloadProgress(req), getKnownSizes(folder));
   if (!result.ok) {
     const { reason, kind } = result.error;
     console.log(`- downloading all files in ${folder} from Portfolio \u{274c} ${reason}`);
@@ -161,5 +158,43 @@ const downloadAllFiles = async (req, res) => {
   sendToActivityLog(`\u{2b07}\u{fe0f} ${folder} (${count}) \u{2705}\n`);
 };
 
-module.exports = { getHomePage, serveStaticFiles, downloadFile, downloadAllFiles, uploadFile };
+///////////////////////////////////////////////////////////////////////////////
+/**
+ * Update PortfolioServer: sends a new SERVER.COM (saved by multer to a
+ * temporary file) to C:\SERVER.COM. PortfolioServer can overwrite itself
+ * while it runs; the new version starts once the user presses Esc on the
+ * Portfolio and starts it again. Only while PortfolioServer is running.
+ * @param {object} req - Express request object, req.file from multer
+ * @param {object} res - Express response object
+ */
+const updateServer = async (req, res) => {
+  if (!req.file) return res.status(400).type('text/plain').send('No file uploaded.');
+  const remove = () => fs.rm(req.file.path, { force: true }, () => {});
+  if (!capabilities.fullFeatures()) {
+    remove();
+    return res.status(409).type('text/plain').send('PortfolioServer isn’t running on the Portfolio.');
+  }
+  const dest = config.serverComPath;
+  console.log(`- updating PortfolioServer: ${req.file.originalname} -> ${dest}`);
+  try {
+    await transmitFileToPortfolio(req.file.path, null, dest);
+  } catch (error) {
+    remove();
+    const reason = error.reason || `(${error.message})`;
+    console.log(`- updating PortfolioServer \u{274c} ${reason}`);
+    sendToActivityLog(`\u{2b06}\u{fe0f} ${dest} (PortfolioServer update) \u{274c} ${reason}\n`);
+    notePortfolioResult(error);
+    if (error.kind === 'noanswer' || error.kind === 'stalled') sendPortfolioError(reason);
+    return res.status(error.kind === 'failed' ? 500 : 503).type('text/plain').send(reason.replace(/^\(|\)$/g, ''));
+  }
+  remove();
+  notePortfolioResult(null);
+  console.log('- updating PortfolioServer \u{2705}');
+  sendToActivityLog(`\u{2b06}\u{fe0f} ${dest} (PortfolioServer update) \u{2705}\n`);
+  res.type('text/plain').send('Sent. Press Esc on the Portfolio, then start SERVER.COM again.');
+  // the file may be in the folder being shown
+  refreshFolder().catch(() => {});
+};
+
+module.exports = { getHomePage, serveStaticFiles, downloadFile, downloadAllFiles, uploadFile, updateServer };
 ///////////////////////////////////////////////////////////////////////////////

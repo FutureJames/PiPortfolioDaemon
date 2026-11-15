@@ -27,6 +27,7 @@ If you find this project useful, please consider giving the [original repository
 - [What you need](#what-you-need)
 - [Setup](#setup)
 - [Using the web interface](#using-the-web-interface)
+- [Optional: PortfolioServer](#optional-portfolioserver)
 - [Managing the server](#managing-the-server)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
@@ -50,7 +51,8 @@ Without these, a Portfolio is mostly a pretty plastic brick. PiPortfolioDaemon r
 - **Browse both drives** — switch between `A:\` (memory card) and `C:\` (RAM disk), open folders by name and go back up with `..`
 - **Download** a file with one click, or every file in a folder as one `.zip`
 - **Upload** several files at once by dropping them onto the page (they're sent straight away), with **Choose files**, or by copying them into the Pi's `upload/` folder (for example over a SAMBA share)
-- **Activity log** of uploads, downloads and folder changes, shared by everyone using the page
+- **With PortfolioServer** (optional, see [below](#optional-portfolioserver)) — folders in the list, file sizes and dates, hidden and system files, **delete** files, **make and remove folders**, and each drive's **free space**
+- **Activity log** of uploads, downloads, deletes and folder changes, shared by everyone using the page
 - **Built-in help** — the **?** button explains each part of the page
 - **Recovers by itself** — reconnects after the Pi restarts or the network drops, and reports when the Portfolio isn't answering
 - **Works anywhere** — responsive layout for phones, follows the system light/dark mode
@@ -149,7 +151,7 @@ gpio -v        # should print the WiringPi version
 
 ### 5. Build and install `rpfolio`
 
-`rpfolio` is the Raspberry Pi build of **transfolio**, the program that talks to the Portfolio. These commands build the version this project was tested with, plus a small patch from PiPortfolioDaemon:
+`rpfolio` is the Raspberry Pi build of **transfolio**, the program that talks to the Portfolio. These commands build the version this project was tested with, plus two patches from PiPortfolioDaemon:
 
 ```bash
 cd ~
@@ -157,6 +159,7 @@ git clone https://github.com/skudi/transfolio.git
 cd transfolio
 git checkout ab89073
 git apply ~/PiPortfolioDaemon/extras/rpfolio-file-size.patch
+git apply ~/PiPortfolioDaemon/extras/rpfolio-portfolioserver.patch
 cc -DRASPIWIRING -O3 transfolio.c -o rpfolio -lwiringPi
 sudo install -m 755 rpfolio /usr/local/bin/rpfolio
 ```
@@ -165,7 +168,10 @@ sudo install -m 755 rpfolio /usr/local/bin/rpfolio
 
 > **Note:** this compiles directly instead of using `make rpfolio`. The Makefile lists `-lwiringPi` before the source file, which current compilers reject with "undefined reference" errors. The library has to come last, as above.
 
-> **Optional:** the patch ([`extras/rpfolio-file-size.patch`](extras/rpfolio-file-size.patch)) makes `rpfolio` print each file's size when downloading. The Portfolio sends the size, but `rpfolio` doesn't normally print it. With it, download progress shows the exact size from the start. Without it (leave out the `git apply` line), sizes are still exact for files up to 28 KB (one block); larger files show an estimate, marked with `~`, until their last block starts.
+Both patches are optional; leave out a `git apply` line to build without it. The web page works with any of these builds, and shows which one it found at the bottom of the page.
+
+- [`extras/rpfolio-file-size.patch`](extras/rpfolio-file-size.patch) makes `rpfolio` print each file's size when downloading. The Portfolio sends the size, but `rpfolio` doesn't normally print it. With it, download progress shows the exact size from the start. Without it, sizes are still exact for files up to 28 KB (one block); larger files show an estimate, marked with `~`, until their last block starts. (With PortfolioServer the page knows every size from the listing anyway.)
+- [`extras/rpfolio-portfolioserver.patch`](extras/rpfolio-portfolioserver.patch) adds the options for [PortfolioServer](#optional-portfolioserver)'s commands (`-x` long listing, `-e` delete, `-m` / `-k` make and remove folders, `-s` free space, `-i` server version, `-q` stop the server). With the Portfolio's built-in server they just say so and exit; everything else works as before.
 
 ### 6. Test the connection
 
@@ -233,15 +239,38 @@ Click the **?** button on the page for the same instructions.
 
 **Drives** — the toggle switches between `A:\` (the removable memory card) and `C:\` (the built-in RAM disk). The list shows the files on that drive. If the memory card is out, the activity log shows ❌ *(no card in A:)* and the page switches back to `C:\`.
 
-**Folders** — the Portfolio doesn't report folders in its file listings, so open one by typing its name in the directory field (for example `GAMES` or `GAMES\SAVES`) and pressing **Enter** or **Open**. Leave it blank for the drive's root. **↰ ..** at the top of the list goes up one level. If the folder doesn't exist, the activity log shows ❌ *(folder not found)* and the page goes back up to the nearest folder that does.
+**Folders** — with [PortfolioServer](#optional-portfolioserver), folders are listed first and open with a click. The built-in server doesn't report folders in its file listings, so there open one by typing its name in the directory field (for example `GAMES` or `GAMES\SAVES`) and pressing **Enter** or **Open**. Leave it blank for the drive's root. **↰ ..** at the top of the list goes up one level. If the folder doesn't exist, the activity log shows ❌ *(folder not found)* and the page goes back up to the nearest folder that does.
 
 **Downloading** — click a file name. It shows *Downloading…* until the file arrives (transfers run at roughly 1.5 KB a second). If the download fails, a message says why and the activity log shows ❌. The round download button in the lower right of the list downloads every file in the folder as one `.zip`, named after the folder (`GAMES.zip`, or `C-drive.zip` for a drive's root).
 
 **Uploading** — drop one or more files onto the upload box to send them straight away, or use **Choose files**, then **Upload**. They go to the folder shown above the list and replace any files with the same names. A bar under the buttons counts the files as each one reaches the Portfolio. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again. Uploads run at roughly 1 KB a second, so a large file takes a while; the rest of the page keeps working meanwhile.
 
-**Activity** — lists uploads (⬆️), downloads (⬇️) and folder changes (📁), with ✅ or ❌ for each one (❌ with the reason, such as a folder that wasn't found). It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
+**Activity** — lists uploads (⬆️), downloads (⬇️), deletes (🗑️) and folder changes (📁), with ✅ or ❌ for each one (❌ with the reason, such as a folder that wasn't found). It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
 
 **Connection** — if the page loses its connection to the Pi, a message appears at the bottom and it reconnects by itself.
+
+**Footer** — shows the web app's version, which `rpfolio` the Pi has, and which server the Portfolio is running (*PortfolioServer 0.4* or *built-in server*; with an `rpfolio` without the PortfolioServer patch it can't tell, and says *unknown*).
+
+---
+
+## Optional: PortfolioServer
+
+PortfolioServer (`SERVER.COM`) is a small DOS program that replaces the Portfolio's built-in file transfer server. It understands everything the built-in server does, so the page works as before, and it adds commands the built-in server lacks. With PortfolioServer running and the `rpfolio` with [`rpfolio-portfolioserver.patch`](extras/rpfolio-portfolioserver.patch) on the Pi, the page also:
+
+- lists **folders** first, with a folder icon — click one to open it;
+- shows each file's **size and date**, and **hidden** (`h`) and **system** (`s`) files, dimmed: the Portfolio won't send those, so they can't be downloaded, but they can be deleted;
+- has a **delete** button on each file (and on each empty folder), confirmed every time, since it can't be undone; read-only files (`r`) can't be deleted;
+- has a **New folder** button next to **Open**;
+- shows the drive's **free space** under the drive toggle, and warns before an upload that won't fit;
+- can **stop** PortfolioServer and **update** it, from the links in the footer.
+
+The page notices by itself when you switch servers or `rpfolio` builds: it checks on every page load, after an error, and whenever the Portfolio comes back. Under the built-in server the extra features disappear and the footer says how to get them.
+
+**Installing it.** With the Portfolio in its built-in server mode, upload `SERVER.COM` to `C:\` with the page. Then on the Portfolio press **Esc** to leave server mode, and at the DOS prompt type `C:\SERVER` and press **Enter**. **Esc** stops PortfolioServer again.
+
+**Batteries.** While PortfolioServer runs, the Portfolio doesn't switch itself off, so stop it when you're done (press **Esc** on the Portfolio, or **Stop** in the page's footer). The page never stops or starts it by itself.
+
+**Updating it.** Click **Update…** in the footer and choose the new `SERVER.COM`. It replaces `C:\SERVER.COM` (PortfolioServer can overwrite itself while it runs); then press **Esc** on the Portfolio and start `C:\SERVER` again.
 
 ---
 
@@ -258,9 +287,10 @@ Click the **?** button on the page for the same instructions.
 The log shows each page load, folder change and transfer:
 
 ```
-Portfolio Folder Daemon v1.0 - LH 05/2023
+Portfolio Folder Daemon 1.1.0
 -> c:\
 
+- rpfolio: Transfolio 1.0 + PortfolioServer patch 1; Portfolio server: PortfolioServer 0.4
 - web page was loaded
 - setting Portfolio folder: c:\
 - uploading NOTES.TXT to Portfolio ✅
@@ -282,6 +312,7 @@ Settings are in [`src/config/index.js`](src/config/index.js):
 | `portfolioAnswerTimeout` | `5000` | How long (ms) to wait for the Portfolio to answer at all before reporting no connection |
 | `portfolioStallTimeout` | `15000` | How long (ms) a transfer may go without progress before it counts as stopped part-way. A transfer that keeps moving is never cut off |
 | `portfolioRetryInterval` | `15000` | While the Portfolio isn't answering and a page is open, how often (ms) to check whether it's back |
+| `rpfolio` | `rpfolio` | The `rpfolio` program to run. The `RPFOLIO` environment variable overrides it, e.g. to try another build |
 
 To use another port with the service, add a line under `[Service]` in `/etc/systemd/system/piportfolio.service`, for example `Environment=PORT=3000`, then run `sudo systemctl daemon-reload && sudo systemctl restart piportfolio`.
 

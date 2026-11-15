@@ -4,7 +4,11 @@ const WebSocket = require('ws');
 const path = require('path');
 
 const config = require('../config');
-const { getDirListFromPortfolio, folderExists } = require('../utils');
+const {
+    PortfolioError, getDirListFromPortfolio, folderExists, getLongDirList, folderExistsLong, getFreeSpace,
+    deleteFile, makeFolder, removeFolder, quitServer, isDosName, isPortfolioFolder,
+} = require('../utils');
+const capabilities = require('../utils/capabilities');
 
 let clients = [];
 let loggedOffline = false;      // the log already says the Portfolio isn't answering
@@ -103,6 +107,31 @@ function sendPortfolioError(reason, offline = true) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Which rpfolio and Portfolio server are in use (see utils/capabilities): the
+// page's footer shows them, and the PortfolioServer features come and go
+// with them. Every page hears of a change straight away.
+
+function statusMessage() {
+    return JSON.stringify({ command: 'status', ...capabilities.describe() });
+}
+
+capabilities.events.on('change', () => {
+    const message = statusMessage();
+    clients.forEach(client => client.send(message));
+});
+
+/**
+ * Checks the server again (e.g. after an error, or the Portfolio coming
+ * back); if the PortfolioServer features came or went, lists the folder
+ * again with or without them.
+ */
+async function recheckServer() {
+    const before = capabilities.fullFeatures();
+    await capabilities.checkServer();
+    if (capabilities.fullFeatures() !== before) await refreshFolder();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Whether the Portfolio is answering. While it isn't and a page is open, the
 // server tries a listing every portfolioRetryInterval; when one works, every
 // page gets the files and its "no connection" message goes away, without a
@@ -116,6 +145,12 @@ let retryTimer = null;
  * @param {PortfolioError|null} error - null if it answered
  */
 function notePortfolioResult(error) {
+    // after an error the user may have switched servers: check (in the
+    // background, after the commands already waiting)
+    if (error && (error.kind === 'failed' || error.kind === 'stalled')) {
+        setImmediate(() => recheckServer().catch(e => console.error('- server check failed', e)));
+    }
+    if (error && (error.kind === 'notserver' || error.kind === 'notpatched')) error = null;    // it answered
     const online = !error || error.kind === 'failed';   // 'failed': it answered, then refused
     if (online === portfolioOnline) {
         if (!online) scheduleRetry();
@@ -142,6 +177,8 @@ function scheduleRetry() {
         console.log('- Portfolio is answering again');
         logFolder(status);
         await leaveMissingFolder(status);
+        // it may be running another server now
+        await recheckServer();
     }, config.portfolioRetryInterval);
 }
 
@@ -183,11 +220,20 @@ async function handleMessage(ws, message) {
             console.log("- web page was loaded");
             ws.send(JSON.stringify({ command: 'set_log', data: activityLog }));
             normalizePortfolioPath(config.portfolioPath);
+            // rpfolio may have been swapped, or the server switched, since
+            // the last page load
+            ws.send(statusMessage());
+            await capabilities.checkRpfolio();
             {
+                // no answer to the server check: don't wait for a listing
+                // to time out as well
+                const offline = await capabilities.checkServer();
                 // the current folder may have disappeared since it was
                 // opened (e.g. the RAM disk was wiped, or the A: card
                 // was taken out): if so, say so and move to one that exists
-                const status = await sendDirList();
+                const status = offline && offline.kind === 'noanswer'
+                    ? reportListFailure(offline)
+                    : await sendDirList();
                 if (status === 'missing' || status === 'nocard') {
                     logFolder(status);
                     await leaveMissingFolder(status);
@@ -200,6 +246,13 @@ async function handleMessage(ws, message) {
             break;
         case 'set_folder':
             console.log(`- setting Portfolio folder: ${message.folder}`);
+            // only A: and C: (B: would make DOS ask for a disk on the Portfolio)
+            if (typeof message.folder !== 'string' || !/^[ac]:\\/i.test(message.folder)) {
+                sendToActivityLog(`📁 ${String(message.folder).slice(0, 80)} \u{274c} (only A: and C: can be used)\n`);
+                normalizePortfolioPath(config.portfolioPath);
+                await sendDirList();
+                break;
+            }
             normalizePortfolioPath(message.folder);
             {
                 const status = await sendDirList();
@@ -215,18 +268,77 @@ async function handleMessage(ws, message) {
             // liveness check from the page (e.g. after sleep or a network change)
             ws.send(JSON.stringify({ command: 'pong', id: message.id }));
             break;
+        case 'delete_file':
+        case 'make_folder':
+        case 'remove_folder':
+            await managePath(ws, message);
+            break;
+        case 'stop_server':
+            await stopServer(ws);
+            break;
         default:
             console.log('Unknown command:', message.command);
     }
 }
   
 ///////////////////////////////////////////////////////////////////////////////
+// The last listing's file sizes (from the long listing only), so downloads
+// can show exact progress from the start
+let knownSizes = { folder: null, sizes: new Map() };
+
+/**
+ * The exact sizes of a folder's files, if the last listing was of that
+ * folder and had them.
+ * @param {string} folder
+ * @returns {Map<string, number>|undefined} upper-case name -> bytes
+ */
+const getKnownSizes = (folder) =>
+    (knownSizes.folder && knownSizes.folder.toUpperCase() === folder.toUpperCase() ? knownSizes.sizes : undefined);
+
+/**
+ * Lists a folder. With PortfolioServer: files and folders with details, and
+ * the drive's free space; otherwise just the file names.
+ * @returns {Promise<{entries: object[], exists: boolean, full: boolean, free: object|null}>}
+ *   entries: { name } or, with PortfolioServer, see getLongListing
+ */
+async function listFolder(folder) {
+    return capabilities.withFullFeatures(async () => {
+        const entries = await getLongDirList(folder);
+        const exists = entries.length > 0 || await folderExistsLong(folder);
+        let free = null;
+        if (exists) {
+            try {
+                free = { drive: folder.slice(0, 3).toLowerCase(), ...(await getFreeSpace(folder)) };
+            } catch (error) {
+                // a listing without the free space is still a listing,
+                // unless the server has changed
+                if (error.kind === 'notserver' || error.kind === 'notpatched') throw error;
+            }
+        }
+        return { entries, exists, full: true, free };
+    }, async () => {
+        const names = await getDirListFromPortfolio(folder);
+        // an empty listing may mean the folder doesn't exist; only check then
+        const exists = names.length > 0 || await folderExists(folder);
+        return { entries: names.map(name => ({ name })), exists, full: false, free: null };
+    });
+}
+
+// tells the pages a listing failed; returns sendDirList's 'error'
+function reportListFailure(failure) {
+    notePortfolioResult(failure);
+    lastListError = failure.reason;
+    // 'failed': it answered but reported an error; not "not connected"
+    sendPortfolioError(failure.reason, failure.kind !== 'failed');
+    return 'error';
+}
+
 /**
  * Sends the current folder's file list to every open page.
  *
  * Portfolio commands wait their turn, so the folder may change before this
  * finishes (another page, or the user, opens one). The folder is fixed at the
- * start, both commands use it, and if another folder is open by the end the
+ * start, every command uses it, and if another folder is open by the end the
  * result is dropped: the listing for that folder is queued behind this one.
  * @returns {Promise<'ok'|'missing'|'nocard'|'error'|'stale'>} listed, folder
  *   doesn't exist, no card in A:, the Portfolio failed, or another folder was
@@ -234,31 +346,31 @@ async function handleMessage(ws, message) {
  */
 async function sendDirList() {
     const folder = config.portfolioPath;
-    let files;
-    let exists = true;
+    let listing;
     let failure = null;
     try {
-        files = await getDirListFromPortfolio(folder);
-        // an empty listing may mean the folder doesn't exist; only check then
-        if (files.length === 0) exists = await folderExists(folder);
+        listing = await listFolder(folder);
     } catch (error) {
-        // includes the Portfolio stopping between the two requests: report
+        // includes the Portfolio stopping between the requests: report
         // it like any other lost contact, not as "No files"
         failure = error;
     }
     if (config.portfolioPath !== folder) return 'stale';
-    if (failure) {
-        notePortfolioResult(failure);
-        lastListError = failure.reason;
-        // 'failed': it answered but reported an error; not "not connected"
-        sendPortfolioError(failure.reason, failure.kind !== 'failed');
-        return 'error';
-    }
+    if (failure) return reportListFailure(failure);
     notePortfolioResult(null);
     loggedOffline = false;
+    const { entries, exists, full, free } = listing;
+    knownSizes = full
+        ? { folder, sizes: new Map(entries.filter(e => !e.folder).map(e => [e.name.toUpperCase(), e.size])) }
+        : { folder: null, sizes: new Map() };
     const newMessage = {
         command: 'dir',
-        files: files
+        folder,
+        entries,
+        // just the names of the files, as before
+        files: entries.filter(entry => !entry.folder).map(entry => entry.name),
+        full,
+        free,
     };
     if (exists === false) {
         // a missing drive root means the A: memory card is out
@@ -271,6 +383,93 @@ async function sendDirList() {
     clients.forEach(client => client.send(JSON.stringify(newMessage)));
     if (newMessage.nocard) return 'nocard';
     return newMessage.missing ? 'missing' : 'ok';
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// File management (PortfolioServer only): delete a file, make a folder,
+// remove an empty folder. The page names the folder it is showing and the
+// entry's name. Each result goes in the activity log, then the folder is
+// listed again. If the Portfolio has switched to its built-in server (or
+// rpfolio to the original), the page quietly loses the buttons instead.
+
+const MANAGE = {
+    delete_file: { run: deleteFile, icon: '\u{1f5d1}\u{fe0f}', what: '', verb: 'deleting' },
+    make_folder: { run: makeFolder, icon: '📁', what: ' (new folder)', verb: 'making folder' },
+    remove_folder: { run: removeFolder, icon: '\u{1f5d1}\u{fe0f}', what: ' (folder)', verb: 'removing folder' },
+};
+
+async function managePath(ws, { command, folder, name }) {
+    const action = MANAGE[command];
+    if (!isPortfolioFolder(folder) || !isDosName(name)) {
+        ws.send(JSON.stringify({ command: 'pofo_error', reason: '(not a valid DOS name)', offline: false }));
+        return;
+    }
+    const path = folder.toUpperCase() + name.toUpperCase();
+    if (!capabilities.fullFeatures()) {
+        ws.send(JSON.stringify({ command: 'notice', text: 'That needs PortfolioServer on the Portfolio' }));
+        return;
+    }
+    console.log(`- ${action.verb} ${path}`);
+    try {
+        await action.run(path);
+        notePortfolioResult(null);
+        console.log(`- ${action.verb} ${path} \u{2705}`);
+        sendToActivityLog(`${action.icon} ${path}${action.what} \u{2705}\n`);
+    } catch (error) {
+        if (await capabilities.noteCapabilityError(error)) {
+            // nothing was done; the page now shows the features as gone
+            console.log(`- ${action.verb} ${path}: ${error.reason}`);
+            ws.send(JSON.stringify({ command: 'notice', text: `Not done: ${error.reason.replace(/^\(|\)$/g, '')}` }));
+        } else {
+            const reason = error instanceof PortfolioError ? error.reason : `(${error.message})`;
+            console.log(`- ${action.verb} ${path} \u{274c} ${reason}`);
+            sendToActivityLog(`${action.icon} ${path}${action.what} \u{274c} ${reason}\n`);
+            notePortfolioResult(error);
+            if (error.kind === 'noanswer' || error.kind === 'stalled') {
+                sendPortfolioError(reason);
+                return;
+            }
+        }
+    }
+    await refreshFolder();
+}
+
+/**
+ * Stops PortfolioServer (only ever on the user's request: it keeps the
+ * Portfolio from switching itself off, which drains the batteries). The
+ * Portfolio then goes back to DOS, so it stops answering until a server is
+ * started on it again.
+ */
+async function stopServer(ws) {
+    if (!capabilities.fullFeatures()) {
+        ws.send(JSON.stringify({ command: 'notice', text: 'PortfolioServer isn’t running' }));
+        return;
+    }
+    console.log('- stopping PortfolioServer');
+    try {
+        await quitServer();
+    } catch (error) {
+        if (await capabilities.noteCapabilityError(error)) {
+            ws.send(JSON.stringify({ command: 'notice', text: `Not done: ${error.reason.replace(/^\(|\)$/g, '')}` }));
+            await refreshFolder();
+            return;
+        }
+        const reason = error instanceof PortfolioError ? error.reason : `(${error.message})`;
+        console.log(`- stopping PortfolioServer \u{274c} ${reason}`);
+        sendToActivityLog(`\u{23f9}\u{fe0f} PortfolioServer \u{274c} ${reason}\n`);
+        notePortfolioResult(error);
+        return;
+    }
+    console.log('- stopping PortfolioServer \u{2705}');
+    sendToActivityLog('\u{23f9}\u{fe0f} PortfolioServer stopped \u{2705}\n');
+    capabilities.noteServerStopped();
+    // nothing answers now: show "no connection" and look for a server
+    // every few seconds, as when the Portfolio is switched off
+    const reason = '(no connection to the Portfolio)';
+    lastListError = reason;
+    loggedOffline = true;
+    notePortfolioResult(new PortfolioError('noanswer', reason));
+    sendPortfolioError(reason);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -373,6 +572,6 @@ const sendDownloadProgress = (owner, request, progress) => {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError, sendUploadResult, sendUploadProgress, sendDownloadProgress, expectUpload, forgetUpload, notePortfolioResult, refreshFolder };
+module.exports = { setupWebSockets, sendToActivityLog, sendDirList, sendPortfolioError, sendUploadResult, sendUploadProgress, sendDownloadProgress, expectUpload, forgetUpload, notePortfolioResult, refreshFolder, getKnownSizes };
 ///////////////////////////////////////////////////////////////////////////////
   
