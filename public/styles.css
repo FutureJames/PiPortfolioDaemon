@@ -1194,6 +1194,10 @@ input[type="submit"]:disabled {
     line-height: 1.55;
 }
 
+.help-body p + p {
+    margin-top: 8px;
+}
+
 .help-body h3 {
     margin: 16px 0 4px;
     font-size: 0.75rem;

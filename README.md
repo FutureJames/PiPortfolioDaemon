@@ -5,7 +5,7 @@
 Connect a Raspberry Pi to the Portfolio's Parallel Interface, then browse, download and upload files from any browser on your network — desktop or phone.
 
 <p align="center">
-  <img src="images/screenshot-desktop.png" width="800" alt="The PiPortfolioDaemon web interface: the A:\ memory card on the left, with CARDTEST.TXT part-way through downloading (23.2 KB of 57.6 KB), and the activity log on the right" />
+  <img src="images/screenshot-desktop.png" width="800" alt="The PiPortfolioDaemon web interface with PortfolioServer: the A:\ memory card on the left, with its folders first, each file's size and date, the free space under the drive toggle, and NOTES.TXT part-way through downloading (6.8 KB of 14.8 KB); the activity log on the right; the versions of the web app, rpfolio and PortfolioServer in the footer" />
 </p>
 
 | | |
@@ -61,13 +61,13 @@ Without these, a Portfolio is mostly a pretty plastic brick. PiPortfolioDaemon r
 ## Screenshots
 
 <p align="center">
-  <img src="images/screenshot-dark.png" width="560" alt="The web interface in dark mode: the C:\ RAM disk, with the download-all button filling as the folder downloads" />
+  <img src="images/screenshot-dark.png" width="560" alt="The web interface in dark mode, asking for confirmation before deleting BUDGET.WKS from the memory card" />
   &nbsp;
-  <img src="images/screenshot-mobile.png" width="220" alt="The web interface on a phone, part-way through downloading a file from the memory card" />
+  <img src="images/screenshot-mobile.png" width="220" alt="The web interface on a phone: the memory card's folders and files with their sizes, and a delete button on each row" />
 </p>
 
 <p align="center">
-  <img src="images/screenshot-help.png" width="560" alt="The built-in help panel, open at its Downloading and Uploading sections" />
+  <img src="images/screenshot-help.png" width="560" alt="The built-in help panel, open at its PortfolioServer section" />
 </p>
 
 ---
@@ -241,9 +241,9 @@ Click the **?** button on the page for the same instructions.
 
 **Folders** — with [PortfolioServer](#optional-portfolioserver), folders are listed first and open with a click. The built-in server doesn't report folders in its file listings, so there open one by typing its name in the directory field (for example `GAMES` or `GAMES\SAVES`) and pressing **Enter** or **Open**. Leave it blank for the drive's root. **↰ ..** at the top of the list goes up one level. If the folder doesn't exist, the activity log shows ❌ *(folder not found)* and the page goes back up to the nearest folder that does.
 
-**Downloading** — click a file name. It shows *Downloading…* until the file arrives (transfers run at roughly 1.5 KB a second). If the download fails, a message says why and the activity log shows ❌. The round download button in the lower right of the list downloads every file in the folder as one `.zip`, named after the folder (`GAMES.zip`, or `C-drive.zip` for a drive's root).
+**Downloading** — click a file name. Its row fills up and shows how much has arrived, e.g. *6.8 KB of 14.8 KB* (transfers run at roughly 1.5 KB a second). Without PortfolioServer, a size starting with `~` is an estimate, which becomes exact near the end. If the download fails, a message says why and the activity log shows ❌. The round download button in the lower right of the list downloads every file in the folder as one `.zip`, named after the folder (`GAMES.zip`, or `C-drive.zip` for a drive's root).
 
-**Uploading** — drop one or more files onto the upload box to send them straight away, or use **Choose files**, then **Upload**. They go to the folder shown above the list and replace any files with the same names. A bar under the buttons counts the files as each one reaches the Portfolio. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again. Uploads run at roughly 1 KB a second, so a large file takes a while; the rest of the page keeps working meanwhile.
+**Uploading** — drop one or more files onto the upload box to send them straight away, or use **Choose files**, then **Upload**. They go to the folder shown above the list and replace any files with the same names. A bar under the buttons shows how much has reached the Portfolio, and which file is being sent. Files can be up to 2 MB. The Portfolio uses short DOS names (8 characters plus a 3-character extension, like `NOTES.TXT`), so longer names are shortened. If an upload fails, the activity log shows ❌ with the reason and the file is discarded; just upload it again. Uploads run at roughly 1 KB a second, so a large file takes a while; the rest of the page keeps working meanwhile.
 
 **Activity** — lists uploads (⬆️), downloads (⬇️), deletes (🗑️) and folder changes (📁), with ✅ or ❌ for each one (❌ with the reason, such as a folder that wasn't found). It is shared by everyone using the page and kept until the server restarts. **Clear** empties it for everyone.
 
