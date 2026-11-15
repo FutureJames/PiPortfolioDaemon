@@ -6,8 +6,9 @@ const path = require('path');
 const config = require('../config');
 const {
     PortfolioError, getDirListFromPortfolio, folderExists, getLongDirList, folderExistsLong, getFreeSpace,
-    deleteFile, makeFolder, removeFolder, quitServer, isDosName, isPortfolioFolder,
+    deleteFile, makeFolder, removeFolder, quitServer, isDosName, isPortfolioFolder, transmitFileToPortfolio,
 } = require('../utils');
+const { downloadServerCom } = require('../utils/serverRelease');
 const capabilities = require('../utils/capabilities');
 
 let clients = [];
@@ -243,6 +244,9 @@ async function handleMessage(ws, message) {
                     loggedOffline = true;
                 }
             }
+            // is there a newer PortfolioServer on GitHub? After the listing,
+            // so the page doesn't wait for it; the page hears when it's known
+            capabilities.checkLatestRelease().catch(e => console.error('- release check failed', e));
             break;
         case 'set_folder':
             console.log(`- setting Portfolio folder: ${message.folder}`);
@@ -275,6 +279,9 @@ async function handleMessage(ws, message) {
             break;
         case 'stop_server':
             await stopServer(ws);
+            break;
+        case 'update_server':
+            await updateServer(ws);
             break;
         default:
             console.log('Unknown command:', message.command);
@@ -431,6 +438,53 @@ async function managePath(ws, { command, folder, name }) {
             }
         }
     }
+    await refreshFolder();
+}
+
+/**
+ * Updates PortfolioServer from its latest GitHub release (only on the user's
+ * request): downloads SERVER.COM and sends it to C:\SERVER.COM. PortfolioServer
+ * can overwrite itself while it runs; the new version starts once the user
+ * presses Esc on the Portfolio and starts it again.
+ */
+async function updateServer(ws) {
+    const notice = (text, kind = 'info') => ws.send(JSON.stringify({ command: 'notice', text, kind }));
+    const release = capabilities.availableUpdate();
+    if (!release) {
+        notice('There’s no newer PortfolioServer to install');
+        return;
+    }
+    const dest = config.serverComPath;
+    const what = `${dest} (PortfolioServer ${release.version})`;
+    console.log(`- updating PortfolioServer to ${release.version} from ${release.url}`);
+    let download;
+    try {
+        download = await downloadServerCom(release);
+    } catch (error) {
+        console.log(`- updating PortfolioServer \u{274c} ${error.message}`);
+        sendToActivityLog(`\u{2b06}\u{fe0f} ${what} \u{274c} ${error.message}\n`);
+        notice(`Update failed: ${error.message.replace(/^\(|\)$/g, '')}`);
+        return;
+    }
+    try {
+        await transmitFileToPortfolio(download.path, null, dest);
+    } catch (error) {
+        const reason = error instanceof PortfolioError ? error.reason : `(${error.message})`;
+        console.log(`- updating PortfolioServer \u{274c} ${reason}`);
+        sendToActivityLog(`\u{2b06}\u{fe0f} ${what} \u{274c} ${reason}\n`);
+        notePortfolioResult(error);
+        if (error.kind === 'noanswer' || error.kind === 'stalled') sendPortfolioError(reason);
+        else notice(`Update failed: ${reason.replace(/^\(|\)$/g, '')}`);
+        return;
+    } finally {
+        download.cleanup();
+    }
+    notePortfolioResult(null);
+    console.log(`- updating PortfolioServer to ${release.version} \u{2705}`);
+    sendToActivityLog(`\u{2b06}\u{fe0f} ${what} \u{2705}\n`);
+    capabilities.noteServerSent(release.version);
+    notice(`PortfolioServer ${release.version} sent. Press Esc on the Portfolio, then start SERVER.COM again.`, 'ok');
+    // the file may be in the folder being shown
     await refreshFolder();
 }
 
