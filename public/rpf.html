@@ -36,9 +36,6 @@
                     </div>
                 </div>
 
-                <!-- PortfolioServer only: the drive's free space -->
-                <p class="free-space" id="free_space" aria-live="polite" hidden></p>
-
                 <div class="folder-row">
                     <label for="current_folder" class="path-field">
                         <span class="visually-hidden">Directory</span>
@@ -73,19 +70,24 @@
                         <span>Loading…</span>
                     </div>
                 </div>
-                    <!-- every file in the folder as one .zip; shown when there are files -->
-                    <button type="button" id="download_all" class="download-all" hidden
-                            title="Download all files in this folder (.zip)"
-                            aria-label="Download all files in this folder">
-                        <svg class="download-all-icon" viewBox="0 0 24 24" width="18" height="18"
-                             fill="none" stroke="currentColor" stroke-width="2.2"
-                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M12 4v11"/>
-                            <path d="M7 10.5l5 5 5-5"/>
-                            <path d="M4.5 16.5v2.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-2.5"/>
-                        </svg>
-                        <span class="spinner download-all-spinner" aria-hidden="true"></span>
-                    </button>
+                    <!-- below the scrolling list, so files never run under it -->
+                    <div class="dir-footer">
+                        <!-- PortfolioServer only: the drive's free space -->
+                        <p class="free-space" id="free_space" aria-live="polite" hidden></p>
+                        <!-- every file in the folder as one .zip; shown when there are files -->
+                        <button type="button" id="download_all" class="download-all" hidden
+                                title="Download all files in this folder (.zip)"
+                                aria-label="Download all files in this folder">
+                            <svg class="download-all-icon" viewBox="0 0 24 24" width="18" height="18"
+                                 fill="none" stroke="currentColor" stroke-width="2.2"
+                                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M12 4v11"/>
+                                <path d="M7 10.5l5 5 5-5"/>
+                                <path d="M4.5 16.5v2.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-2.5"/>
+                            </svg>
+                            <span class="spinner download-all-spinner" aria-hidden="true"></span>
+                        </button>
+                    </div>
                 </div>
 
                 <div id="upload_form">
@@ -219,8 +221,8 @@
                (<code>s</code>) files, dimmed: those can't be downloaded. The bin button at the end
                of a row deletes that file, or an empty folder, after asking each time; read-only
                files (<code>r</code>) can't be deleted. The folder button next to
-               <strong>Open</strong> makes a new folder. The drive's free space shows under the drive
-               toggle, and the page warns before an upload that won't fit.</p>
+               <strong>Open</strong> makes a new folder. The drive's free space shows at the bottom of
+               the file list, and the page warns before an upload that won't fit.</p>
             <p>To start it, leave the built-in server with <kbd>Esc</kbd> and type
                <code>C:\SERVER</code> at the Portfolio's DOS prompt. The Portfolio doesn't switch
                itself off while it runs, so stop it when you're done: <kbd>Esc</kbd> on the
