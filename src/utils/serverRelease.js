@@ -12,9 +12,13 @@ const config = require('../config');
 // Pi Zero can't do both at once without upsetting rpfolio's timing
 const { runExclusive } = require('./portfolioUtils');
 
-// GitHub allows 60 unauthenticated API requests an hour per address, so the
-// answer is kept for a while; page loads within that time reuse it
-const CACHE_MS = 30 * 60 * 1000;
+// How long an answer from GitHub is reused before a page load asks again: a
+// new release shows within five minutes. GitHub allows 60 unauthenticated API
+// requests an hour per address (a "304 Not Modified" answer counts too), and
+// this uses at most 12. A failed check (Pi offline, GitHub down or the limit
+// reached) also waits this long, so an offline Pi doesn't wait on GitHub at
+// every page load.
+const RECHECK_MS = 5 * 60 * 1000;
 const TIMEOUT_MS = 10000;
 // a sane SERVER.COM: a DOS .COM file is at most 64 KB; PortfolioServer is ~2 KB
 const MIN_SIZE = 256;
@@ -24,19 +28,21 @@ let cached = null;      // { at, release }
 
 /**
  * The latest release: { version: '0.4', url: download address of its
- * SERVER.COM, size }, or null if GitHub can't be reached or the release has
- * no SERVER.COM. Cached for half an hour.
+ * SERVER.COM, size }, or null if GitHub hasn't been reached yet or the
+ * release has no SERVER.COM. Checked again at most every five minutes; if a
+ * check fails, the last known release is kept.
  * @returns {Promise<{version: string, url: string, size: number}|null>}
  */
 async function getLatestRelease() {
-    if (cached && Date.now() - cached.at < CACHE_MS) return cached.release;
+    if (cached && Date.now() - cached.at < RECHECK_MS) return cached.release;
     return runExclusive(fetchLatestRelease);
 }
 
 async function fetchLatestRelease() {
     // another request may have fetched it while this one waited its turn
-    if (cached && Date.now() - cached.at < CACHE_MS) return cached.release;
-    let release = null;
+    if (cached && Date.now() - cached.at < RECHECK_MS) return cached.release;
+    // a failed check keeps the last known release
+    let release = cached ? cached.release : null;
     try {
         const res = await fetch(config.serverReleaseApi, {
             headers: { 'Accept': 'application/vnd.github+json', 'User-Agent': 'PiPortfolioDaemon' },
@@ -46,18 +52,16 @@ async function fetchLatestRelease() {
             const data = await res.json();
             const version = /^v?(\d+(?:\.\d+)*)$/.exec(String(data.tag_name || ''));
             const asset = (data.assets || []).find(a => String(a.name).toUpperCase() === 'SERVER.COM');
-            if (version && asset) {
-                release = { version: version[1], url: asset.browser_download_url, size: asset.size };
-            }
+            release = version && asset
+                ? { version: version[1], url: asset.browser_download_url, size: asset.size }
+                : null;
         } else {
             console.log(`- checking for a PortfolioServer release: GitHub answered ${res.status}`);
         }
     } catch (error) {
         console.log(`- checking for a PortfolioServer release failed: ${error.message}`);
     }
-    // a failed check is kept too (for less time), so an offline Pi doesn't
-    // wait on GitHub at every page load
-    cached = { at: release ? Date.now() : Date.now() - CACHE_MS + 5 * 60 * 1000, release };
+    cached = { at: Date.now(), release };
     return release;
 }
 
